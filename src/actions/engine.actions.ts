@@ -8,9 +8,13 @@
  *   2. Resolves {{step_X_output}} placeholders using prior step outputs.
  *   3. Resolves the concrete model version from (provider, modelTier) via
  *      getActualModelVersion() so the code never hard-codes a specific version.
- *   4. Calls the appropriate AI API for each step with automatic tier fallback:
- *        maximum → medium → minimum
- *      when a 404 / 529 / model-unavailable error is detected.
+ *   4. Calls the appropriate AI API for each step:
+ *        – Non-Gemini providers: standard 3-tier fallback (maximum → medium → minimum)
+ *          on 404 / 503 / model-unavailable errors.
+ *        – Gemini: "aggressive fallback" — on any model-unavailable error the engine
+ *          immediately abandons tier logic and sequentially tries every model in
+ *          GEMINI_FALLBACK_MODELS until one succeeds. This is necessary because the
+ *          Gemini free tier inconsistently returns 404 for valid model names.
  *   5. Routes the output: stores it for the next step, saves a blog draft,
  *      or logs it for Telegram (to be wired up later).
  *
@@ -62,9 +66,9 @@ const MODEL_VERSION_MAP: Record<string, Record<ModelTier, string>> = {
     maximum: 'chatgpt-4o-latest',              // OpenAI continually-updated alias
   },
   gemini: {
-    minimum: 'gemini-1.5-flash',             // Flash — fastest / free-tier friendly
-    medium:  'gemini-1.5-pro',              // Pro — balanced capability
-    maximum: 'gemini-1.5-pro',               // No "ultra" stable alias yet; Pro is top tier
+    minimum: 'gemini-1.5-flash-latest',        // Flash — fastest / free-tier friendly
+    medium:  'gemini-1.5-pro-latest',          // Pro — balanced capability
+    maximum: 'gemini-1.5-pro-latest',          // No "ultra" stable alias yet; Pro is top tier
   },
   perplexity: {
     minimum: 'llama-3-sonar-small-32k-online', // lightweight online search model
@@ -73,12 +77,39 @@ const MODEL_VERSION_MAP: Record<string, Record<ModelTier, string>> = {
   },
 };
 
+// ─── Gemini aggressive fallback list ─────────────────────────────────────────
+
+/**
+ * Ordered list of known-stable Gemini model identifiers tried sequentially
+ * when the tier-resolved model name returns a 404 / 503 from the free tier.
+ *
+ * Design rules:
+ *   • Use bare, version-pinned names (NO "-latest" suffix) — the Gemini free
+ *     tier is inconsistently unreliable with dynamic aliases.
+ *   • Order from most capable → most available so capability degrades
+ *     gracefully rather than suddenly.
+ *   • Add new entries when Google releases confirmed-stable model IDs.
+ *   • Remove entries only after a model is fully decommissioned by Google.
+ *
+ * The tier-resolved model (from MODEL_VERSION_MAP above) is always prepended
+ * at runtime, so the full attempt order for any tier is:
+ *   [tier-resolved] → gemini-1.5-flash → gemini-1.5-pro → gemini-pro
+ * Duplicates are automatically deduplicated while preserving insertion order.
+ */
+const GEMINI_FALLBACK_MODELS: readonly string[] = [
+  'gemini-1.5-flash',   // fastest; highest free-tier quota
+  'gemini-1.5-pro',     // balanced capability
+  'gemini-pro',         // legacy stable fallback (still served on free tier)
+];
+
+// ─── Model version resolver ───────────────────────────────────────────────────
+
 /**
  * Returns the concrete model version string for a (provider, tier) pair.
  * Falls back to the medium tier if the provider or tier is unknown so the
  * engine never crashes on a bad DB value.
  */
-function getActualModelVersion(provider: string, tier: string): string {
+export function getActualModelVersion(provider: string, tier: string): string {
   const providerMap = MODEL_VERSION_MAP[provider];
   if (!providerMap) {
     console.warn(`[Engine] Unknown provider "${provider}" — falling back to claude/medium`);
@@ -265,12 +296,12 @@ async function callPerplexity(
   return { text, status: res.status, rawBody };
 }
 
-// ─── Unified dispatcher with tier fallback ────────────────────────────────────
+// ─── Unified dispatcher ───────────────────────────────────────────────────────
 
 /**
  * Calls the correct provider API for a given (provider, modelVersion).
- * Returns the raw response envelope so the retry loop can inspect the
- * HTTP status without re-throwing immediately.
+ * Returns the raw response envelope so retry loops can inspect the HTTP
+ * status without re-throwing immediately.
  */
 async function dispatchCall(
   provider:     string,
@@ -294,8 +325,114 @@ async function dispatchCall(
   }
 }
 
+// ─── Gemini: aggressive model-list fallback ───────────────────────────────────
+
 /**
- * Calls the AI with automatic tier-based fallback.
+ * Gemini-specific caller that completely ignores tier logic on failure and
+ * instead walks through every model in GEMINI_FALLBACK_MODELS sequentially.
+ *
+ * Attempt order (example for tier = 'medium'):
+ *   1. gemini-1.5-pro-latest  (tier-resolved, from MODEL_VERSION_MAP)
+ *   2. gemini-1.5-flash       (GEMINI_FALLBACK_MODELS[0])
+ *   3. gemini-1.5-pro         (GEMINI_FALLBACK_MODELS[1])
+ *   4. gemini-pro             (GEMINI_FALLBACK_MODELS[2])
+ *
+ * Deduplication: if the tier-resolved name already appears in
+ * GEMINI_FALLBACK_MODELS it is tried only once (first occurrence wins).
+ *
+ * Hard-bail conditions (NOT retried):
+ *   • 401 Unauthorized  — wrong / missing API key
+ *   • 403 Forbidden     — project disabled / billing issue
+ *   • 429 Rate-limited  — quota exhausted; a different model won't help
+ *   All other non-200 responses that pass isModelUnavailableError() proceed
+ *   to the next candidate.
+ */
+async function callGeminiWithAggressiveFallback(
+  apiKey:        string,
+  tierModel:     string,   // the model name resolved from (provider, tier)
+  prompt:        string,
+): Promise<string> {
+  // Build a deduplicated ordered list: tier-resolved first, then the static list.
+  const seen    = new Set<string>();
+  const toTry: string[] = [];
+  for (const m of [tierModel, ...GEMINI_FALLBACK_MODELS]) {
+    if (!seen.has(m)) { seen.add(m); toTry.push(m); }
+  }
+
+  // Track every failed attempt for the final error message.
+  const failures: { model: string; status: number; snippet: string }[] = [];
+
+  for (const model of toTry) {
+    const isFirstAttempt = model === toTry[0];
+
+    if (!isFirstAttempt) {
+      console.warn(
+        `[Engine | Gemini] Aggressive fallback → trying "${model}" ` +
+        `(previous failures: ${failures.map((f) => `${f.model}→HTTP${f.status}`).join(', ')})`,
+      );
+    }
+
+    let result: { text: string; status: number; rawBody: string };
+    try {
+      result = await callGemini(apiKey, model, prompt);
+    } catch (networkErr) {
+      // Network / parse error on this candidate — log and try the next one.
+      console.error(`[Engine | Gemini] Network error for "${model}":`, networkErr);
+      failures.push({ model, status: 0, snippet: String(networkErr) });
+      continue;
+    }
+
+    if (result.status === 200) {
+      if (!isFirstAttempt) {
+        console.info(
+          `[Engine | Gemini] Aggressive fallback succeeded with model="${model}" ` +
+          `after ${failures.length} failed attempt(s): ` +
+          failures.map((f) => f.model).join(' → '),
+        );
+      }
+      return result.text;
+    }
+
+    // Hard-bail: auth / quota errors cannot be resolved by swapping the model.
+    if ([401, 403, 429].includes(result.status)) {
+      throw new Error(
+        `Gemini (${model}) HTTP ${result.status} — this error cannot be resolved ` +
+        `by trying a different model: ${result.rawBody.slice(0, 300)}`,
+      );
+    }
+
+    // Model-unavailable? Record and continue to the next candidate.
+    if (isModelUnavailableError(result.status, result.rawBody)) {
+      const snippet = result.rawBody.slice(0, 150);
+      console.warn(`[Engine | Gemini] Model "${model}" unavailable (HTTP ${result.status}): ${snippet}`);
+      failures.push({ model, status: result.status, snippet });
+      continue;
+    }
+
+    // Any other unexpected non-200 response — bail immediately.
+    throw new Error(
+      `Gemini (${model}) HTTP ${result.status}: ${result.rawBody.slice(0, 400)}`,
+    );
+  }
+
+  // All candidates exhausted — build a detailed error message.
+  const attemptSummary = failures
+    .map((f, i) => `  ${i + 1}. ${f.model} → HTTP ${f.status || 'network error'}: ${f.snippet}`)
+    .join('\n');
+
+  throw new Error(
+    `All ${toTry.length} Gemini model(s) failed.\n` +
+    `Attempted (in order): ${toTry.join(', ')}\n` +
+    `Failure details:\n${attemptSummary}`,
+  );
+}
+
+// ─── Standard tier-based fallback (non-Gemini providers) ─────────────────────
+
+/**
+ * Calls the AI with automatic tier-based fallback for Claude, ChatGPT and
+ * Perplexity. Gemini is intentionally routed to callGeminiWithAggressiveFallback
+ * above and never reaches this function.
  *
  * Attempt order example for tier='maximum':
  *   1. maximum version  → if model-unavailable error →
@@ -305,60 +442,78 @@ async function dispatchCall(
  * Auth / rate-limit / quota errors (401, 403, 429) are NOT retried because
  * switching the model won't fix those problems.
  */
-async function callAI(
+async function callWithTierFallback(
   provider:   string,
   tier:       string,
   prompt:     string,
   env:        CloudflareEnv,
 ): Promise<string> {
   const tiersToTry: string[] = [tier, ...getFallbackTiers(tier)];
-
   let lastError = '';
 
   for (const currentTier of tiersToTry) {
     const modelVersion = getActualModelVersion(provider, currentTier);
 
     if (currentTier !== tier) {
-      // We're in a fallback attempt — log it clearly.
       console.warn(
-        `[Engine] Falling back to tier="${currentTier}" (${modelVersion}) ` +
-        `for provider="${provider}" after: ${lastError}`,
+        `[Engine] Tier fallback: provider="${provider}" ` +
+        `"${tier}" → "${currentTier}" (${modelVersion}) after: ${lastError}`,
       );
     }
 
     let result: { text: string; status: number; rawBody: string };
     try {
       result = await dispatchCall(provider, modelVersion, prompt, env);
-    } catch (dispatchErr) {
-      // Network-level or response-parsing error — not an HTTP status code issue.
-      throw dispatchErr;
+    } catch (networkErr) {
+      throw networkErr;
     }
 
     if (result.status === 200) {
       if (currentTier !== tier) {
         console.info(
-          `[Engine] Fallback succeeded: provider="${provider}" tier="${currentTier}" model="${modelVersion}"`,
+          `[Engine] Tier fallback succeeded: provider="${provider}" ` +
+          `tier="${currentTier}" model="${modelVersion}"`,
         );
       }
       return result.text;
     }
 
-    // Check whether the error is "model not available" — only those warrant a retry.
     if (isModelUnavailableError(result.status, result.rawBody)) {
       lastError = `HTTP ${result.status} — ${result.rawBody.slice(0, 200)}`;
-      continue; // try next fallback tier
+      continue;
     }
 
-    // For any other HTTP error (401, 403, 429, 500 unrelated, etc.) bail out immediately.
+    // Hard-bail on auth / quota / unrelated server errors.
     throw new Error(
       `${provider} (${modelVersion}) HTTP ${result.status}: ${result.rawBody.slice(0, 400)}`,
     );
   }
 
-  // All tiers exhausted.
   throw new Error(
     `All model tiers for provider="${provider}" failed. Last error: ${lastError}`,
   );
+}
+
+// ─── Public callAI: routes to the correct strategy per provider ───────────────
+
+/**
+ * Entry point used by the chain runner. Routes to the appropriate retry
+ * strategy depending on the provider:
+ *
+ *   gemini      → callGeminiWithAggressiveFallback (model-list exhaustion)
+ *   everything  → callWithTierFallback             (3-tier degradation)
+ */
+async function callAI(
+  provider:   string,
+  tier:       string,
+  prompt:     string,
+  env:        CloudflareEnv,
+): Promise<string> {
+  if (provider === 'gemini') {
+    const tierModel = getActualModelVersion('gemini', tier);
+    return callGeminiWithAggressiveFallback(env.GEMINI_API_KEY, tierModel, prompt);
+  }
+  return callWithTierFallback(provider, tier, prompt, env);
 }
 
 // ─── Main engine action ───────────────────────────────────────────────────────
