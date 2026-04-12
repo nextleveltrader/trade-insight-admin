@@ -17,12 +17,27 @@ export const assets = sqliteTable('assets', {
 });
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
+//
+// Migration note for existing DBs — run this ALTER statement:
+//
+//   ALTER TABLE prompts ADD COLUMN model_tier TEXT NOT NULL DEFAULT 'medium';
+//
+// For new installs, run: npx drizzle-kit generate && npx wrangler d1 migrations apply
 
 export const prompts = sqliteTable('prompts', {
   id:              integer('id').primaryKey({ autoIncrement: true }),
   assetId:         integer('asset_id').references(() => assets.id),
   order:           integer('order').notNull(),
   model:           text('model').notNull(),
+  /**
+   * modelTier controls which specific model version the engine resolves at
+   * runtime via getActualModelVersion(). One of: 'minimum' | 'medium' | 'maximum'.
+   *
+   *   minimum  → fastest / cheapest variant for the chosen provider
+   *   medium   → balanced default  (← default for all new rows)
+   *   maximum  → most capable (and most expensive) variant
+   */
+  modelTier:       text('model_tier').notNull().default('medium'),
   content:         text('content').notNull(),
   outputTo:        text('output_to').notNull(),
   targetStepOrder: integer('target_step_order'),
