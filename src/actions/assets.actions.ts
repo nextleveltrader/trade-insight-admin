@@ -38,13 +38,18 @@ export type InitialData = {
  * Returns all rows flat; the client groups prompts by assetId.
  */
 export async function getInitialData(): Promise<InitialData> {
-  const db = getDb();
-  const [allCategories, allAssets, allPrompts] = await Promise.all([
-    db.select().from(categories),
-    db.select().from(assets),
-    db.select().from(prompts).orderBy(asc(prompts.order)),
-  ]);
-  return { categories: allCategories, assets: allAssets, prompts: allPrompts };
+  try {
+    const db = getDb();
+    const [allCategories, allAssets, allPrompts] = await Promise.all([
+      db.select().from(categories),
+      db.select().from(assets),
+      db.select().from(prompts).orderBy(asc(prompts.order)),
+    ]);
+    return { categories: allCategories, assets: allAssets, prompts: allPrompts };
+  } catch (e) {
+    console.error('[getInitialData] failed:', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
 }
 
 // ─── Category actions ─────────────────────────────────────────────────────────
@@ -59,9 +64,12 @@ export async function addCategory(
       .insert(categories)
       .values({ name: name.trim() })
       .returning();
+    if (!row) return err('Failed to create category: no row returned from database');
     return ok(row);
   } catch (e) {
-    return err(`Failed to add category: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[addCategory] error:', msg);
+    return err(`Failed to add category. ${msg}`);
   }
 }
 
@@ -85,7 +93,9 @@ export async function deleteCategory(
 
     return ok({ deletedId: id });
   } catch (e) {
-    return err(`Failed to delete category: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[deleteCategory] error:', msg);
+    return err(`Failed to delete category. ${msg}`);
   }
 }
 
@@ -103,9 +113,12 @@ export async function addAsset(
       .insert(assets)
       .values({ name: name.trim(), categoryId })
       .returning();
+    if (!row) return err('Failed to create asset: no row returned from database');
     return ok(row);
   } catch (e) {
-    return err(`Failed to add asset: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[addAsset] error:', msg);
+    return err(`Failed to add asset. ${msg}`);
   }
 }
 
@@ -119,7 +132,9 @@ export async function deleteAsset(
     await db.delete(assets).where(eq(assets.id, id));
     return ok({ deletedId: id });
   } catch (e) {
-    return err(`Failed to delete asset: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[deleteAsset] error:', msg);
+    return err(`Failed to delete asset. ${msg}`);
   }
 }
 
@@ -161,6 +176,7 @@ export async function upsertPromptStep(
         .where(eq(prompts.id, input.id))
         .returning();
 
+      if (!row) return err('Failed to update step: no row returned from database');
       return ok(row);
     } else {
       // INSERT
@@ -176,10 +192,13 @@ export async function upsertPromptStep(
           execType:        input.execType,
         })
         .returning();
+      if (!row) return err('Failed to create step: no row returned from database');
       return ok(row);
     }
   } catch (e) {
-    return err(`Failed to save prompt step: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[upsertPromptStep] error:', msg);
+    return err(`Failed to save prompt step. ${msg}`);
   }
 }
 
@@ -223,8 +242,11 @@ export async function deletePromptStep(
     });
 
     const reordered = await Promise.all(updates);
+    if (!reordered || reordered.length === 0) return err('Failed to reorder steps: no rows returned from database');
     return ok(reordered);
   } catch (e) {
-    return err(`Failed to delete prompt step: ${String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[deletePromptStep] error:', msg);
+    return err(`Failed to delete prompt step. ${msg}`);
   }
 }
