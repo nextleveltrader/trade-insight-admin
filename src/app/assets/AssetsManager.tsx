@@ -988,11 +988,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setEngineResult(null); // clear any previous result
 
     startEngine(async () => {
-      const result = await runPromptChain(selectedAssetId);
-      if (result.success) {
-        setEngineResult(result);
-      } else {
-        showError(result.error);
+      try {
+        const result = await runPromptChain(selectedAssetId);
+        if (result.success) {
+          setEngineResult(result);
+        } else {
+          showError(result.error);
+        }
+      } catch (err) {
+        showError('An unexpected error occurred while running the prompt chain.');
       }
     });
   }
