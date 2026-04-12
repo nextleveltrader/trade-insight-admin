@@ -109,7 +109,7 @@ const GEMINI_FALLBACK_MODELS: readonly string[] = [
  * Falls back to the medium tier if the provider or tier is unknown so the
  * engine never crashes on a bad DB value.
  */
-export function getActualModelVersion(provider: string, tier: string): string {
+function getActualModelVersion(provider: string, tier: string): string {
   const providerMap = MODEL_VERSION_MAP[provider];
   if (!providerMap) {
     console.warn(`[Engine] Unknown provider "${provider}" — falling back to claude/medium`);
