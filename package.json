@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
+    "@cloudflare/workers-types": "^4.20260412.1",
     "@libsql/client": "^0.17.2",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.8.0",
