@@ -95,16 +95,7 @@ export const MODEL_TIERS: Record<AIProvider, Record<ModelTier, string>> = {
 
 // ─── Public result type ───────────────────────────────────────────────────────
 
-export type ChainRunResult = {
-  success:       boolean;
-  stepsRun:      number;
-  totalSteps:    number;
-  postsCreated:  number;
-  fallbacksUsed: number;   // how many steps required a tier fallback
-  error?:        string;
-  failedStep?:   number;   // order of the step that threw
-  failedModel?:  string;   // provider:tier string that failed
-};
+export type ChainRunResult = { success: true } | { success: false; error: string };
 
 // ─── ModelNotFoundError ───────────────────────────────────────────────────────
 //
@@ -354,14 +345,23 @@ async function callAI(
 // ─── Main engine action ───────────────────────────────────────────────────────
 
 export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
-  let stepsRun      = 0;
-  let postsCreated  = 0;
-  let totalSteps    = 0;
-  let fallbacksUsed = 0;
-
   try {
     const db  = getDb();
     const env = (getRequestContext().env as unknown) as CloudflareEnv;
+
+    // Check for required API keys
+    const requiredKeys = [
+      { key: env.ANTHROPIC_API_KEY, name: 'ANTHROPIC_API_KEY' },
+      { key: env.OPENAI_API_KEY, name: 'OPENAI_API_KEY' },
+      { key: env.GEMINI_API_KEY, name: 'GEMINI_API_KEY' },
+      { key: env.PERPLEXITY_API_KEY, name: 'PERPLEXITY_API_KEY' },
+    ];
+
+    for (const { key, name } of requiredKeys) {
+      if (!key || key.trim() === '') {
+        throw new Error(`Missing or empty environment variable: ${name}`);
+      }
+    }
 
     // ── 1. Load steps ordered by execution order ───────────────────────────
     const steps = await db
@@ -370,16 +370,10 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
       .where(eq(prompts.assetId, assetId))
       .orderBy(asc(prompts.order));
 
-    totalSteps = steps.length;
-
-    if (totalSteps === 0) {
+    if (steps.length === 0) {
       return {
-        success:       false,
-        stepsRun:      0,
-        totalSteps:    0,
-        postsCreated:  0,
-        fallbacksUsed: 0,
-        error:         'No prompt steps configured for this asset. Add at least one step before running.',
+        success: false,
+        error: 'No prompt steps configured for this asset. Add at least one step before running.',
       };
     }
 
@@ -392,6 +386,9 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
     const assetName = assetRow?.name ?? 'Unknown Asset';
 
     // ── 3. Execute chain sequentially ─────────────────────────────────────
+    let stepsRun      = 0;
+    let postsCreated  = 0;
+    let fallbacksUsed = 0;
     const stepOutputs: Record<number, string> = {};
 
     for (const step of steps) {
@@ -403,7 +400,7 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
       const resolvedModelName  = MODEL_TIERS[provider][tier];
 
       console.log(
-        `[Engine] Step ${step.order}/${totalSteps} — ` +
+        `[Engine] Step ${step.order}/${steps.length} — ` +
         `provider: ${provider}, tier: ${tier}, model: ${resolvedModelName}`,
       );
 
@@ -416,14 +413,8 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
       } catch (aiErr) {
         // Non-recoverable error (auth, rate limit, network, medium fallback also failed)
         return {
-          success:       false,
-          stepsRun,
-          totalSteps,
-          postsCreated,
-          fallbacksUsed,
-          failedStep:    step.order,
-          failedModel:   `${provider}:${tier}`,
-          error:         aiErr instanceof Error ? aiErr.message : String(aiErr),
+          success: false,
+          error: aiErr instanceof Error ? aiErr.message : String(aiErr),
         };
       }
 
@@ -458,17 +449,12 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
     // Bust the posts page cache if any blog drafts were created
     if (postsCreated > 0) revalidatePath('/posts');
 
-    return { success: true, stepsRun, totalSteps, postsCreated, fallbacksUsed };
+    return { success: true };
 
-  } catch (outerErr) {
-    // Guards against DB failures, missing env vars, context errors, etc.
+  } catch (err) {
     return {
-      success:       false,
-      stepsRun,
-      totalSteps,
-      postsCreated,
-      fallbacksUsed,
-      error:         `Engine error: ${outerErr instanceof Error ? outerErr.message : String(outerErr)}`,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }

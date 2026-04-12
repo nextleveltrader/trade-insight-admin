@@ -96,7 +96,7 @@ function EngineResultToast({
   assetName,
   onClose,
 }: {
-  result:    ChainRunResult;
+  result:    { success: true };
   assetName: string;
   onClose:   () => void;
 }) {
@@ -107,30 +107,20 @@ function EngineResultToast({
   }, [onClose]);
 
   return (
-    <div className={`fixed top-6 right-6 z-50 w-80 rounded-2xl border shadow-2xl overflow-hidden
-      ${result.success
-        ? 'bg-zinc-900 border-emerald-500/30'
-        : 'bg-zinc-900 border-red-500/30'
-      }`}
-    >
+    <div className="fixed top-6 right-6 z-50 w-80 rounded-2xl border shadow-2xl overflow-hidden bg-zinc-900 border-emerald-500/30">
       {/* Coloured top strip */}
-      <div className={`h-0.5 w-full ${result.success ? 'bg-emerald-500' : 'bg-red-500'}`} />
+      <div className="h-0.5 w-full bg-emerald-500" />
 
       <div className="p-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-              result.success ? 'bg-emerald-500/15' : 'bg-red-500/15'
-            }`}>
-              {result.success
-                ? <CircleCheck size={16} className="text-emerald-400" />
-                : <CircleX     size={16} className="text-red-400"     />
-              }
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+              <CircleCheck size={16} className="text-emerald-400" />
             </div>
             <div>
-              <p className={`text-sm font-semibold ${result.success ? 'text-emerald-300' : 'text-red-300'}`}>
-                {result.success ? 'Chain Complete' : 'Chain Failed'}
+              <p className="text-sm font-semibold text-emerald-300">
+                Chain Complete
               </p>
               <p className="text-[10px] text-zinc-500 font-mono">{assetName}</p>
             </div>
@@ -140,65 +130,16 @@ function EngineResultToast({
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {[
-            { label: 'Steps Run',   value: `${result.stepsRun} / ${result.totalSteps}` },
-            { label: 'Drafts Made', value: result.postsCreated },
-            {
-              label: result.success ? 'Fallbacks' : 'Failed At',
-              value: result.success
-                ? (result.fallbacksUsed > 0 ? result.fallbacksUsed : '—')
-                : `Step ${result.failedStep ?? '?'}`,
-              warn: result.success && result.fallbacksUsed > 0,
-            },
-          ].map(({ label, value, warn }) => (
-            <div key={label} className="bg-zinc-800/60 rounded-lg px-2.5 py-2 text-center">
-              <p className={`text-xs font-semibold ${warn ? 'text-amber-300' : 'text-zinc-200'}`}>{value}</p>
-              <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Error message */}
-        {!result.success && result.error && (
-          <div className="bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2 mb-3">
-            <p className="text-[11px] text-red-300 leading-relaxed font-mono break-words">
-              {result.failedModel && (
-                <span className="font-bold text-red-400">[{result.failedModel}] </span>
-              )}
-              {result.error}
-            </p>
-          </div>
-        )}
-
-        {/* Fallback notice (success path) */}
-        {result.success && result.fallbacksUsed > 0 && (
-          <div className="flex items-start gap-2 bg-amber-400/8 border border-amber-400/20 rounded-lg px-3 py-2 mb-3">
-            <span className="text-amber-400 flex-shrink-0 mt-0.5 text-[11px]">⚠</span>
-            <p className="text-[11px] text-amber-300 leading-relaxed">
-              {result.fallbacksUsed} step{result.fallbacksUsed !== 1 ? 's' : ''} fell back to the
-              medium-tier model after a 404. Check Wrangler logs for details.
-            </p>
-          </div>
-        )}
-
-        {/* Action links */}
-        {result.success && result.postsCreated > 0 && (
-          <a
-            href="/posts"
-            className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 text-xs font-semibold transition-colors"
-          >
-            <ExternalLink size={11} />
-            View {result.postsCreated} new draft{result.postsCreated !== 1 ? 's' : ''} in Posts
-          </a>
-        )}
+        {/* Success message */}
+        <p className="text-xs text-zinc-400 mb-3">
+          The AI prompt chain has completed successfully.
+        </p>
       </div>
 
       {/* Auto-dismiss countdown bar */}
-      <div className={`h-0.5 ${result.success ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+      <div className="h-0.5 bg-emerald-500/20">
         <div
-          className={`h-full ${result.success ? 'bg-emerald-500/60' : 'bg-red-500/60'} animate-[shrink_10s_linear_forwards]`}
+          className="h-full bg-emerald-500/60 animate-[shrink_10s_linear_forwards]"
           style={{ transformOrigin: 'left', animation: 'shrink 10s linear forwards' }}
         />
       </div>
@@ -862,7 +803,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedAssetId,    setSelectedAssetId]    = useState<number | null>(null);
   const [errorMsg,           setErrorMsg]           = useState<string | null>(null);
-  const [engineResult,       setEngineResult]       = useState<ChainRunResult | null>(null);
+  const [engineResult,       setEngineResult]       = useState<{ success: true } | null>(null);
 
   // ── Two independent transitions ────────────────────────────────────────────
   // isPending  → CRUD (add/delete/update) — keeps UI responsive during saves
@@ -1048,7 +989,11 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
 
     startEngine(async () => {
       const result = await runPromptChain(selectedAssetId);
-      setEngineResult(result);
+      if (result.success) {
+        setEngineResult(result);
+      } else {
+        showError(result.error);
+      }
     });
   }
 
