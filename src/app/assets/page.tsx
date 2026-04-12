@@ -19,6 +19,8 @@ import {
   X,
   CheckCircle2,
   ArrowRightCircle,
+  Copy,
+  ClipboardCheck,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -311,6 +313,77 @@ function AssetColumn({
   );
 }
 
+// ─── Placeholder Badge ────────────────────────────────────────────────────────
+
+function PlaceholderBadge({
+  variable,
+  sourceOrder,
+  targetOrder,
+}: {
+  variable: string;
+  sourceOrder: number;
+  targetOrder: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(variable).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5">
+      {/* Left accent bar */}
+      <div className="mt-0.5 w-0.5 self-stretch rounded-full bg-emerald-500/40 flex-shrink-0" />
+
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] text-zinc-500 mb-1.5 leading-relaxed">
+          Insert this variable inside{" "}
+          <span className="text-blue-400 font-medium">Step {targetOrder}</span>
+          {"'s"} prompt where you want Step {sourceOrder}{"'s"} output to appear:
+        </p>
+
+        {/* Badge + copy row */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-md px-2.5 py-1.5 min-w-0">
+            {/* Decorative braces */}
+            <span className="text-zinc-600 font-mono text-[11px] select-none">{"{"}</span>
+            <span className="text-[11px] font-mono text-emerald-300 tracking-tight truncate">
+              {variable.replace(/^\{\{|\}\}$/g, "")}
+            </span>
+            <span className="text-zinc-600 font-mono text-[11px] select-none">{"}"}</span>
+          </div>
+
+          {/* Copy button */}
+          <button
+            onClick={handleCopy}
+            title="Copy variable"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-semibold border transition-all duration-150 flex-shrink-0 ${
+              copied
+                ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+            }`}
+          >
+            {copied ? (
+              <>
+                <ClipboardCheck size={11} />
+                Copied!
+              </>
+            ) : (
+              <>
+                <Copy size={11} />
+                Copy
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Prompt Card ──────────────────────────────────────────────────────────────
 
 function PromptCard({
@@ -328,6 +401,9 @@ function PromptCard({
 }) {
   // Every step except this one is a valid routing target
   const targetableSteps = allSteps.filter((s) => s.order !== step.order);
+
+  // The placeholder variable that downstream prompts should embed
+  const placeholderVar = `{{step_${step.order}_output}}`;
 
   function handleOutputChange(dest: OutputDest) {
     if (dest === "next_step") {
@@ -469,8 +545,8 @@ function PromptCard({
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {targetableSteps.map((s) => {
-                    const isSelected   = step.targetStepOrder === s.order;
-                    const targetModel  = AI_MODELS.find((m) => m.value === s.model)!;
+                    const isSelected  = step.targetStepOrder === s.order;
+                    const targetModel = AI_MODELS.find((m) => m.value === s.model)!;
                     return (
                       <button
                         key={s.id}
@@ -481,7 +557,6 @@ function PromptCard({
                             : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300"
                         }`}
                       >
-                        {/* Model color dot */}
                         <span
                           className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: targetModel.color }}
@@ -495,14 +570,23 @@ function PromptCard({
                 </div>
               )}
 
-              {/* Human-readable routing summary */}
+              {/* Routing summary + placeholder hint */}
               {step.targetStepOrder !== undefined && (
-                <p className="text-[10px] text-zinc-600 pt-0.5">
-                  Output of{" "}
-                  <span className="font-mono text-zinc-400">Step {step.order}</span>
-                  {" "}→ piped as input to{" "}
-                  <span className="font-mono text-blue-400">Step {step.targetStepOrder}</span>
-                </p>
+                <>
+                  <p className="text-[10px] text-zinc-600 pt-0.5">
+                    Output of{" "}
+                    <span className="font-mono text-zinc-400">Step {step.order}</span>
+                    {" "}→ piped as input to{" "}
+                    <span className="font-mono text-blue-400">Step {step.targetStepOrder}</span>
+                  </p>
+
+                  {/* ── Placeholder / Variable hint ── */}
+                  <PlaceholderBadge
+                    variable={placeholderVar}
+                    sourceOrder={step.order}
+                    targetOrder={step.targetStepOrder}
+                  />
+                </>
               )}
             </div>
           )}
