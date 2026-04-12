@@ -1,0 +1,1 @@
+ALTER TABLE `prompts` ADD `model_tier` text DEFAULT 'medium' NOT NULL;
