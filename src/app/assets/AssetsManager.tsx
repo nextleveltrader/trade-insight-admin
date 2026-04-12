@@ -830,14 +830,19 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const tempCat: Category = { id: -Date.now(), name };
     setCategories((prev) => [...prev, tempCat]);
     startTransition(async () => {
-      const result = await addCategory(name);
-      if (result.error) {
+      try {
+        const result = await addCategory(name);
+        if (result.error) {
+          setCategories((prev) => prev.filter((c) => c.id !== tempCat.id));
+          showError(result.error);
+          return;
+        }
+        const created = result.data!;
+        setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? created : c)));
+      } catch (err) {
         setCategories((prev) => prev.filter((c) => c.id !== tempCat.id));
-        showError(result.error);
-        return;
+        showError('An unexpected error occurred while adding the category.');
       }
-      const created = result.data!;
-      setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? created : c)));
     });
   }
 
@@ -847,11 +852,17 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setAssets((prev) => prev.filter((a) => a.categoryId !== id));
     if (selectedCategoryId === id) { setSelectedCategoryId(null); setSelectedAssetId(null); }
     startTransition(async () => {
-      const result = await deleteCategory(id);
-      if (result.error) {
+      try {
+        const result = await deleteCategory(id);
+        if (result.error) {
+          setCategories(backup.categories);
+          setAssets(backup.assets);
+          showError(result.error);
+        }
+      } catch (err) {
         setCategories(backup.categories);
         setAssets(backup.assets);
-        showError(result.error);
+        showError('An unexpected error occurred while deleting the category.');
       }
     });
   }
@@ -863,14 +874,19 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId };
     setAssets((prev) => [...prev, tempAsset]);
     startTransition(async () => {
-      const result = await addAsset(name, selectedCategoryId);
-      if (result.error) {
+      try {
+        const result = await addAsset(name, selectedCategoryId);
+        if (result.error) {
+          setAssets((prev) => prev.filter((a) => a.id !== tempAsset.id));
+          showError(result.error);
+          return;
+        }
+        const created = result.data!;
+        setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? created : a)));
+      } catch (err) {
         setAssets((prev) => prev.filter((a) => a.id !== tempAsset.id));
-        showError(result.error);
-        return;
+        showError('An unexpected error occurred while adding the asset.');
       }
-      const created = result.data!;
-      setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? created : a)));
     });
   }
 
@@ -879,10 +895,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setAssets((prev) => prev.filter((a) => a.id !== id));
     if (selectedAssetId === id) setSelectedAssetId(null);
     startTransition(async () => {
-      const result = await deleteAsset(id);
-      if (result.error) {
+      try {
+        const result = await deleteAsset(id);
+        if (result.error) {
+          setAssets(backupAssets);
+          showError(result.error);
+        }
+      } catch (err) {
         setAssets(backupAssets);
-        showError(result.error);
+        showError('An unexpected error occurred while deleting the asset.');
       }
     });
   }
@@ -899,25 +920,33 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     };
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: [...existing, tempStep] }));
     startTransition(async () => {
-      const result = await upsertPromptStep({
-        assetId: selectedAssetId, order: newOrder, model: 'claude',
-        content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
-      });
-      if (result.error) {
+      try {
+        const result = await upsertPromptStep({
+          assetId: selectedAssetId, order: newOrder, model: 'claude',
+          content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
+        });
+        if (result.error) {
+          setPromptMap((prev) => ({
+            ...prev,
+            [selectedAssetId]: (prev[selectedAssetId] ?? []).filter((s) => s.id !== tempStep.id),
+          }));
+          showError(result.error);
+          return;
+        }
+        const savedStep = dbPromptToStep(result.data!);
+        setPromptMap((prev) => ({
+          ...prev,
+          [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
+            s.id === tempStep.id ? savedStep : s
+          ),
+        }));
+      } catch (err) {
         setPromptMap((prev) => ({
           ...prev,
           [selectedAssetId]: (prev[selectedAssetId] ?? []).filter((s) => s.id !== tempStep.id),
         }));
-        showError(result.error);
-        return;
+        showError('An unexpected error occurred while adding the step.');
       }
-      const savedStep = dbPromptToStep(result.data!);
-      setPromptMap((prev) => ({
-        ...prev,
-        [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
-          s.id === tempStep.id ? savedStep : s
-        ),
-      }));
     });
   }
 
@@ -933,24 +962,34 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!current) return;
     const merged = { ...current, ...patch };
     startTransition(async () => {
-      const result = await upsertPromptStep({
-        id,
-        assetId:         selectedAssetId,
-        order:           merged.order,
-        model:           merged.model,
-        content:         merged.content,
-        outputTo:        merged.outputTo,
-        targetStepOrder: merged.targetStepOrder ?? null,
-        execType:        merged.execType,
-      });
-      if (result.error) {
+      try {
+        const result = await upsertPromptStep({
+          id,
+          assetId:         selectedAssetId,
+          order:           merged.order,
+          model:           merged.model,
+          content:         merged.content,
+          outputTo:        merged.outputTo,
+          targetStepOrder: merged.targetStepOrder ?? null,
+          execType:        merged.execType,
+        });
+        if (result.error) {
+          setPromptMap((prev) => ({
+            ...prev,
+            [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
+              s.id === id ? current : s
+            ),
+          }));
+          showError(result.error);
+        }
+      } catch (err) {
         setPromptMap((prev) => ({
           ...prev,
           [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
             s.id === id ? current : s
           ),
         }));
-        showError(result.error);
+        showError('An unexpected error occurred while updating the step.');
       }
     });
   }
@@ -968,16 +1007,21 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     );
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: cleaned }));
     startTransition(async () => {
-      const result = await deletePromptStep(id, selectedAssetId);
-      if (result.error) {
+      try {
+        const result = await deletePromptStep(id, selectedAssetId);
+        if (result.error) {
+          setPromptMap((prev) => ({ ...prev, [selectedAssetId]: backup }));
+          showError(result.error);
+          return;
+        }
+        setPromptMap((prev) => ({
+          ...prev,
+          [selectedAssetId]: result.data!.map(dbPromptToStep),
+        }));
+      } catch (err) {
         setPromptMap((prev) => ({ ...prev, [selectedAssetId]: backup }));
-        showError(result.error);
-        return;
+        showError('An unexpected error occurred while deleting the step.');
       }
-      setPromptMap((prev) => ({
-        ...prev,
-        [selectedAssetId]: result.data!.map(dbPromptToStep),
-      }));
     });
   }
 
