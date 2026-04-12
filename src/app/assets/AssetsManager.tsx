@@ -145,16 +145,10 @@ function EngineResultToast({
           {[
             { label: 'Steps Run',   value: `${result.stepsRun} / ${result.totalSteps}` },
             { label: 'Drafts Made', value: result.postsCreated },
-            {
-              label: result.success ? 'Fallbacks' : 'Failed At',
-              value: result.success
-                ? (result.fallbacksUsed > 0 ? result.fallbacksUsed : '—')
-                : `Step ${result.failedStep ?? '?'}`,
-              warn: result.success && result.fallbacksUsed > 0,
-            },
-          ].map(({ label, value, warn }) => (
+            { label: 'Status',      value: result.success ? 'OK' : `Step ${result.failedStep ?? '?'}` },
+          ].map(({ label, value }) => (
             <div key={label} className="bg-zinc-800/60 rounded-lg px-2.5 py-2 text-center">
-              <p className={`text-xs font-semibold ${warn ? 'text-amber-300' : 'text-zinc-200'}`}>{value}</p>
+              <p className="text-xs font-semibold text-zinc-200">{value}</p>
               <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">{label}</p>
             </div>
           ))}
@@ -168,17 +162,6 @@ function EngineResultToast({
                 <span className="font-bold text-red-400">[{result.failedModel}] </span>
               )}
               {result.error}
-            </p>
-          </div>
-        )}
-
-        {/* Fallback notice (success path) */}
-        {result.success && result.fallbacksUsed > 0 && (
-          <div className="flex items-start gap-2 bg-amber-400/8 border border-amber-400/20 rounded-lg px-3 py-2 mb-3">
-            <span className="text-amber-400 flex-shrink-0 mt-0.5 text-[11px]">⚠</span>
-            <p className="text-[11px] text-amber-300 leading-relaxed">
-              {result.fallbacksUsed} step{result.fallbacksUsed !== 1 ? 's' : ''} fell back to the
-              medium-tier model after a 404. Check Wrangler logs for details.
             </p>
           </div>
         )}
