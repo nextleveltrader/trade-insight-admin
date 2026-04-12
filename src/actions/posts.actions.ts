@@ -2,82 +2,146 @@
 
 /**
  * src/actions/posts.actions.ts
- *
- * Server Actions for the Blog Posts page.
- * All mutations call revalidatePath('/posts') to keep the server cache
- * consistent, and return the updated record so the client can apply
- * optimistic updates without waiting for a full page re-render.
  */
 
-import { revalidatePath }  from 'next/cache';
-import { eq, desc }        from 'drizzle-orm';
-import { getDb }           from '@/db';
-import { posts, assets }   from '@/db/schema';
-import type { DBPost } from '@/db/schema';
+import { revalidatePath } from 'next/cache';
+import { eq, desc }       from 'drizzle-orm';
+import { getDb }          from '@/db';
+import { posts, assets }  from '@/db/schema';
+import type { DBPost, Asset } from '@/db/schema';
 
-// ─── Result wrapper (same pattern as assets.actions.ts) ───────────────────────
+// ─── Result wrapper ───────────────────────────────────────────────────────────
 
 type ActionResult<T> =
   | { data: T;    error: null }
   | { data: null; error: string };
 
-function ok<T>(data: T): ActionResult<T>      { return { data, error: null }; }
-function err(msg: string): ActionResult<never> {
+function ok<T>(data: T): ActionResult<T>       { return { data, error: null }; }
+function err(msg: string): ActionResult<never>  {
   console.error('[posts.actions]', msg);
   return { data: null, error: msg };
 }
 
-// ─── Joined type returned to the client ──────────────────────────────────────
+// ─── Joined type ──────────────────────────────────────────────────────────────
 
 export type PostWithAsset = DBPost & {
-  assetName: string | null; // null when the asset has since been deleted
+  assetName: string | null;
 };
-
-// ─── Fetch ────────────────────────────────────────────────────────────────────
-
-/**
- * Returns all posts joined with their asset name, ordered newest-first.
- * Called once by the Server Component to hydrate PostsManager.
- */
-export async function getAllPosts(): Promise<PostWithAsset[]> {
-  const db = getDb();
-
-  // Drizzle left join — asset row may be null if asset was deleted
-  const rows = await db
-    .select({
-      id:        posts.id,
-      title:     posts.title,
-      content:   posts.content,
-      status:    posts.status,
-      assetId:   posts.assetId,
-      createdAt: posts.createdAt,
-      assetName: assets.name,
-    })
-    .from(posts)
-    .leftJoin(assets, eq(posts.assetId, assets.id))
-    .orderBy(desc(posts.createdAt));
-
-  return rows.map((r) => ({
-    id:        r.id,
-    title:     r.title,
-    content:   r.content,
-    status:    r.status,
-    assetId:   r.assetId,
-    createdAt: r.createdAt,
-    assetName: r.assetName ?? null,
-  }));
-}
-
-// ─── Status update ────────────────────────────────────────────────────────────
 
 export type PostStatus = 'draft' | 'published' | 'archived';
 
+// ─── Page data (posts + asset selector list) ──────────────────────────────────
+
+export type PostsPageData = {
+  posts:  PostWithAsset[];
+  assets: Pick<Asset, 'id' | 'name'>[];
+};
+
 /**
- * Updates the status of a single post.
- * Returns the full updated PostWithAsset so the client list stays accurate.
+ * Single call from the Server Component — returns all posts (joined with asset
+ * name, newest first) and the full asset list for the "Create Post" form selector.
  */
+export async function getPostsPageData(): Promise<PostsPageData> {
+  const db = getDb();
+
+  const [postRows, assetRows] = await Promise.all([
+    db
+      .select({
+        id:              posts.id,
+        title:           posts.title,
+        content:         posts.content,
+        status:          posts.status,
+        assetId:         posts.assetId,
+        createdAt:       posts.createdAt,
+        category:        posts.category,
+        tags:            posts.tags,
+        slug:            posts.slug,
+        metaDescription: posts.metaDescription,
+        metaKeywords:    posts.metaKeywords,
+        assetName:       assets.name,
+      })
+      .from(posts)
+      .leftJoin(assets, eq(posts.assetId, assets.id))
+      .orderBy(desc(posts.createdAt)),
+
+    db.select({ id: assets.id, name: assets.name }).from(assets),
+  ]);
+
+  return {
+    posts:  postRows.map((r) => ({ ...r, assetName: r.assetName ?? null })),
+    assets: assetRows,
+  };
+}
+
+// ─── Create ───────────────────────────────────────────────────────────────────
+
+export type CreatePostInput = {
+  title:           string;
+  content:         string;
+  status:          PostStatus;
+  assetId:         number | null;
+  category:        string | null;
+  tags:            string | null;   // comma-separated, already joined by client
+  slug:            string | null;
+  metaDescription: string | null;
+  metaKeywords:    string | null;
+};
+
+export async function createManualPost(
+  input: CreatePostInput,
+): Promise<ActionResult<PostWithAsset>> {
+  if (!input.title.trim())   return err('Title is required.');
+  if (!input.content.trim()) return err('Content is required.');
+
+  try {
+    const db = getDb();
+
+    const [row] = await db
+      .insert(posts)
+      .values({
+        title:           input.title.trim(),
+        content:         input.content.trim(),
+        status:          input.status,
+        assetId:         input.assetId,
+        category:        input.category   || null,
+        tags:            input.tags       || null,
+        slug:            input.slug       || null,
+        metaDescription: input.metaDescription || null,
+        metaKeywords:    input.metaKeywords    || null,
+      })
+      .returning();
+
+    // Re-fetch with asset name
+    const [withAsset] = await db
+      .select({
+        id:              posts.id,
+        title:           posts.title,
+        content:         posts.content,
+        status:          posts.status,
+        assetId:         posts.assetId,
+        createdAt:       posts.createdAt,
+        category:        posts.category,
+        tags:            posts.tags,
+        slug:            posts.slug,
+        metaDescription: posts.metaDescription,
+        metaKeywords:    posts.metaKeywords,
+        assetName:       assets.name,
+      })
+      .from(posts)
+      .leftJoin(assets, eq(posts.assetId, assets.id))
+      .where(eq(posts.id, row.id));
+
+    revalidatePath('/posts');
+    return ok({ ...withAsset, assetName: withAsset.assetName ?? null });
+  } catch (e) {
+    return err(`Failed to create post: ${String(e)}`);
+  }
+}
+
+// ─── Update status ────────────────────────────────────────────────────────────
+
 export async function updatePostStatus(
-  id: number,
+  id:     number,
   status: PostStatus,
 ): Promise<ActionResult<PostWithAsset>> {
   if (!id)     return err('Post ID is required.');
@@ -86,24 +150,22 @@ export async function updatePostStatus(
   try {
     const db = getDb();
 
-    const [updated] = await db
-      .update(posts)
-      .set({ status })
-      .where(eq(posts.id, id))
-      .returning();
+    await db.update(posts).set({ status }).where(eq(posts.id, id));
 
-    if (!updated) return err(`Post ${id} not found.`);
-
-    // Re-fetch with asset name so the client gets a complete PostWithAsset
     const [withAsset] = await db
       .select({
-        id:        posts.id,
-        title:     posts.title,
-        content:   posts.content,
-        status:    posts.status,
-        assetId:   posts.assetId,
-        createdAt: posts.createdAt,
-        assetName: assets.name,
+        id:              posts.id,
+        title:           posts.title,
+        content:         posts.content,
+        status:          posts.status,
+        assetId:         posts.assetId,
+        createdAt:       posts.createdAt,
+        category:        posts.category,
+        tags:            posts.tags,
+        slug:            posts.slug,
+        metaDescription: posts.metaDescription,
+        metaKeywords:    posts.metaKeywords,
+        assetName:       assets.name,
       })
       .from(posts)
       .leftJoin(assets, eq(posts.assetId, assets.id))

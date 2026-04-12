@@ -17,42 +17,42 @@ export const assets = sqliteTable('assets', {
 });
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
-// Migration note: if upgrading an existing DB, run:
-//   ALTER TABLE prompts ADD COLUMN target_step_order INTEGER;
-//   ALTER TABLE prompts ADD COLUMN exec_type TEXT NOT NULL DEFAULT 'manual';
 
 export const prompts = sqliteTable('prompts', {
   id:              integer('id').primaryKey({ autoIncrement: true }),
   assetId:         integer('asset_id').references(() => assets.id),
   order:           integer('order').notNull(),
-  model:           text('model').notNull(),      // 'claude' | 'perplexity' | 'gemini' | 'chatgpt'
+  model:           text('model').notNull(),
   content:         text('content').notNull(),
-  outputTo:        text('output_to').notNull(),  // 'next_step' | 'telegram' | 'blog_draft'
-  targetStepOrder: integer('target_step_order'), // nullable — only set when outputTo = 'next_step'
-  execType:        text('exec_type').notNull().default('manual'), // 'manual' | 'scheduled'
+  outputTo:        text('output_to').notNull(),
+  targetStepOrder: integer('target_step_order'),
+  execType:        text('exec_type').notNull().default('manual'),
 });
 
 // ─── Posts ────────────────────────────────────────────────────────────────────
-// Migration note for new installs — create via drizzle-kit generate.
-// For existing DBs, run:
-//   CREATE TABLE IF NOT EXISTS posts (
-//     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-//     title      TEXT    NOT NULL,
-//     content    TEXT    NOT NULL,
-//     status     TEXT    NOT NULL DEFAULT 'draft',
-//     asset_id   INTEGER REFERENCES assets(id),
-//     created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
-//   );
+// Migration note for existing DBs — run these ALTER statements:
+//
+//   ALTER TABLE posts ADD COLUMN category        TEXT;
+//   ALTER TABLE posts ADD COLUMN tags            TEXT;
+//   ALTER TABLE posts ADD COLUMN slug            TEXT;
+//   ALTER TABLE posts ADD COLUMN meta_description TEXT;
+//   ALTER TABLE posts ADD COLUMN meta_keywords   TEXT;
+//
+// For new installs, run: npx drizzle-kit generate && npx wrangler d1 migrations apply
 
 export const posts = sqliteTable('posts', {
-  id:        integer('id').primaryKey({ autoIncrement: true }),
-  title:     text('title').notNull(),
-  content:   text('content').notNull(),
-  // 'draft' | 'published' | 'archived'
-  status:    text('status').notNull().default('draft'),
-  assetId:   integer('asset_id').references(() => assets.id),
-  // Unix timestamp in milliseconds (compatible with `new Date(createdAt)`)
-  createdAt: integer('created_at').notNull().default(sql`(unixepoch('now') * 1000)`),
+  id:              integer('id').primaryKey({ autoIncrement: true }),
+  title:           text('title').notNull(),
+  content:         text('content').notNull(),
+  status:          text('status').notNull().default('draft'), // 'draft' | 'published' | 'archived'
+  assetId:         integer('asset_id').references(() => assets.id),
+  createdAt:       integer('created_at').notNull().default(sql`(unixepoch('now') * 1000)`),
+  // ── New SEO & taxonomy columns ─────────────────────────────────────────────
+  category:        text('category'),           // e.g. "Technical Analysis"
+  tags:            text('tags'),               // comma-separated: "forex,gold,xauusd"
+  slug:            text('slug'),               // URL slug: "xauusd-weekly-outlook"
+  metaDescription: text('meta_description'),   // SEO meta description (≤160 chars)
+  metaKeywords:    text('meta_keywords'),      // SEO meta keywords, comma-separated
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
