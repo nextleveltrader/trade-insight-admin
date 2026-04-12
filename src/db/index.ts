@@ -28,7 +28,15 @@ import * as schema           from './schema';
 export type DB = ReturnType<typeof getDb>;
 
 export function getDb() {
-  const { env } = getRequestContext();
-  const db = (env as { DB: D1Database }).DB;
-  return drizzle(db, { schema });
+  try {
+    const { env } = getRequestContext();
+    if (!env.DB) {
+      throw new Error('D1 database binding "DB" not found in environment');
+    }
+    const db = env.DB as D1Database;
+    return drizzle(db, { schema });
+  } catch (error) {
+    console.error('Error in getDb:', error);
+    throw error;
+  }
 }

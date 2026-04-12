@@ -42,9 +42,10 @@ export type PostsPageData = {
  * name, newest first) and the full asset list for the "Create Post" form selector.
  */
 export async function getPostsPageData(): Promise<PostsPageData> {
-  const db = getDb();
+  try {
+    const db = getDb();
 
-  const [postRows, assetRows] = await Promise.all([
+    const [postRows, assetRows] = await Promise.all([
     db
       .select({
         id:              posts.id,
@@ -71,6 +72,10 @@ export async function getPostsPageData(): Promise<PostsPageData> {
     posts:  postRows.map((r) => ({ ...r, assetName: r.assetName ?? null })),
     assets: assetRows,
   };
+  } catch (error) {
+    console.error('Error in getPostsPageData:', error);
+    throw error;
+  }
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

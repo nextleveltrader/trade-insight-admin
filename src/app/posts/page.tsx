@@ -11,6 +11,11 @@ import PostsManager   from './PostsManager';
 export const runtime = 'edge'; // required for Cloudflare Pages + D1
 
 export default async function PostsPage() {
-  const { posts, assets } = await getPostsPageData();
-  return <PostsManager initialPosts={posts} assets={assets} />;
+  try {
+    const { posts, assets } = await getPostsPageData();
+    return <PostsManager initialPosts={posts} assets={assets} />;
+  } catch (error) {
+    console.error('Error in PostsPage:', error);
+    throw error; // Re-throw to show server error
+  }
 }
