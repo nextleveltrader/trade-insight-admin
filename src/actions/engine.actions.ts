@@ -62,9 +62,9 @@ const MODEL_VERSION_MAP: Record<string, Record<ModelTier, string>> = {
     maximum: 'chatgpt-4o-latest',              // OpenAI continually-updated alias
   },
   gemini: {
-    minimum: 'gemini-1.5-flash-latest',        // Flash — fastest / free-tier friendly
-    medium:  'gemini-1.5-pro-latest',          // Pro — balanced capability
-    maximum: 'gemini-1.5-pro-latest',          // No "ultra" stable alias yet; Pro is top tier
+    minimum: 'gemini-1.5-flash',             // Flash — fastest / free-tier friendly
+    medium:  'gemini-1.5-pro',              // Pro — balanced capability
+    maximum: 'gemini-1.5-pro',               // No "ultra" stable alias yet; Pro is top tier
   },
   perplexity: {
     minimum: 'llama-3-sonar-small-32k-online', // lightweight online search model
