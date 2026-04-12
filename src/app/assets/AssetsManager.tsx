@@ -96,7 +96,7 @@ function EngineResultToast({
   assetName,
   onClose,
 }: {
-  result:    { success: true };
+  result:    ChainRunResult;
   assetName: string;
   onClose:   () => void;
 }) {
@@ -107,20 +107,30 @@ function EngineResultToast({
   }, [onClose]);
 
   return (
-    <div className="fixed top-6 right-6 z-50 w-80 rounded-2xl border shadow-2xl overflow-hidden bg-zinc-900 border-emerald-500/30">
+    <div className={`fixed top-6 right-6 z-50 w-80 rounded-2xl border shadow-2xl overflow-hidden
+      ${result.success
+        ? 'bg-zinc-900 border-emerald-500/30'
+        : 'bg-zinc-900 border-red-500/30'
+      }`}
+    >
       {/* Coloured top strip */}
-      <div className="h-0.5 w-full bg-emerald-500" />
+      <div className={`h-0.5 w-full ${result.success ? 'bg-emerald-500' : 'bg-red-500'}`} />
 
       <div className="p-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
-              <CircleCheck size={16} className="text-emerald-400" />
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              result.success ? 'bg-emerald-500/15' : 'bg-red-500/15'
+            }`}>
+              {result.success
+                ? <CircleCheck size={16} className="text-emerald-400" />
+                : <CircleX     size={16} className="text-red-400"     />
+              }
             </div>
             <div>
-              <p className="text-sm font-semibold text-emerald-300">
-                Chain Complete
+              <p className={`text-sm font-semibold ${result.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                {result.success ? 'Chain Complete' : 'Chain Failed'}
               </p>
               <p className="text-[10px] text-zinc-500 font-mono">{assetName}</p>
             </div>
@@ -130,16 +140,65 @@ function EngineResultToast({
           </button>
         </div>
 
-        {/* Success message */}
-        <p className="text-xs text-zinc-400 mb-3">
-          The AI prompt chain has completed successfully.
-        </p>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[
+            { label: 'Steps Run',   value: `${result.stepsRun} / ${result.totalSteps}` },
+            { label: 'Drafts Made', value: result.postsCreated },
+            {
+              label: result.success ? 'Fallbacks' : 'Failed At',
+              value: result.success
+                ? (result.fallbacksUsed > 0 ? result.fallbacksUsed : '—')
+                : `Step ${result.failedStep ?? '?'}`,
+              warn: result.success && result.fallbacksUsed > 0,
+            },
+          ].map(({ label, value, warn }) => (
+            <div key={label} className="bg-zinc-800/60 rounded-lg px-2.5 py-2 text-center">
+              <p className={`text-xs font-semibold ${warn ? 'text-amber-300' : 'text-zinc-200'}`}>{value}</p>
+              <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {!result.success && result.error && (
+          <div className="bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2 mb-3">
+            <p className="text-[11px] text-red-300 leading-relaxed font-mono break-words">
+              {result.failedModel && (
+                <span className="font-bold text-red-400">[{result.failedModel}] </span>
+              )}
+              {result.error}
+            </p>
+          </div>
+        )}
+
+        {/* Fallback notice (success path) */}
+        {result.success && result.fallbacksUsed > 0 && (
+          <div className="flex items-start gap-2 bg-amber-400/8 border border-amber-400/20 rounded-lg px-3 py-2 mb-3">
+            <span className="text-amber-400 flex-shrink-0 mt-0.5 text-[11px]">⚠</span>
+            <p className="text-[11px] text-amber-300 leading-relaxed">
+              {result.fallbacksUsed} step{result.fallbacksUsed !== 1 ? 's' : ''} fell back to the
+              medium-tier model after a 404. Check Wrangler logs for details.
+            </p>
+          </div>
+        )}
+
+        {/* Action links */}
+        {result.success && result.postsCreated > 0 && (
+          <a
+            href="/posts"
+            className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 text-xs font-semibold transition-colors"
+          >
+            <ExternalLink size={11} />
+            View {result.postsCreated} new draft{result.postsCreated !== 1 ? 's' : ''} in Posts
+          </a>
+        )}
       </div>
 
       {/* Auto-dismiss countdown bar */}
-      <div className="h-0.5 bg-emerald-500/20">
+      <div className={`h-0.5 ${result.success ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
         <div
-          className="h-full bg-emerald-500/60 animate-[shrink_10s_linear_forwards]"
+          className={`h-full ${result.success ? 'bg-emerald-500/60' : 'bg-red-500/60'} animate-[shrink_10s_linear_forwards]`}
           style={{ transformOrigin: 'left', animation: 'shrink 10s linear forwards' }}
         />
       </div>
@@ -803,7 +862,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedAssetId,    setSelectedAssetId]    = useState<number | null>(null);
   const [errorMsg,           setErrorMsg]           = useState<string | null>(null);
-  const [engineResult,       setEngineResult]       = useState<{ success: true } | null>(null);
+  const [engineResult,       setEngineResult]       = useState<ChainRunResult | null>(null);
 
   // ── Two independent transitions ────────────────────────────────────────────
   // isPending  → CRUD (add/delete/update) — keeps UI responsive during saves
@@ -817,28 +876,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   const selectedAsset    = assets.find((a) => a.id === selectedAssetId);
   const currentSteps     = selectedAssetId ? (promptMap[selectedAssetId] ?? []) : [];
 
-  const showError = useCallback((msg: string) => {
-    console.error('[AssetsManager]', msg);
-    setErrorMsg(msg);
-  }, []);
-
-  const safeAction = useCallback((action: () => Promise<void>) => {
-    startTransition(() => {
-      action().catch((err) => {
-        console.error('[AssetsManager] uncaught action error', err);
-        showError('An unexpected error occurred while processing your request.');
-      });
-    });
-  }, [showError, startTransition]);
-
-  const safeEngineAction = useCallback((action: () => Promise<void>) => {
-    startEngine(() => {
-      action().catch((err) => {
-        console.error('[AssetsManager] uncaught engine error', err);
-        showError('An unexpected error occurred while running the AI pipeline.');
-      });
-    });
-  }, [showError, startEngine]);
+  const showError = useCallback((msg: string) => setErrorMsg(msg), []);
 
   // ── Category handlers ──────────────────────────────────────────────────────
 
@@ -850,20 +888,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   function handleAddCategory(name: string) {
     const tempCat: Category = { id: -Date.now(), name };
     setCategories((prev) => [...prev, tempCat]);
-    safeAction(async () => {
-      try {
-        const result = await addCategory(name);
-        if (result.error) {
-          setCategories((prev) => prev.filter((c) => c.id !== tempCat.id));
-          showError(result.error);
-          return;
-        }
-        const created = result.data!;
-        setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? created : c)));
-      } catch (err) {
+    startTransition(async () => {
+      const result = await addCategory(name);
+      if (result.error) {
         setCategories((prev) => prev.filter((c) => c.id !== tempCat.id));
-        showError('An unexpected error occurred while adding the category.');
+        showError(result.error);
+        return;
       }
+      const created = result.data!;
+      setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? created : c)));
     });
   }
 
@@ -872,18 +905,12 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setCategories((prev) => prev.filter((c) => c.id !== id));
     setAssets((prev) => prev.filter((a) => a.categoryId !== id));
     if (selectedCategoryId === id) { setSelectedCategoryId(null); setSelectedAssetId(null); }
-    safeAction(async () => {
-      try {
-        const result = await deleteCategory(id);
-        if (result.error) {
-          setCategories(backup.categories);
-          setAssets(backup.assets);
-          showError(result.error);
-        }
-      } catch (err) {
+    startTransition(async () => {
+      const result = await deleteCategory(id);
+      if (result.error) {
         setCategories(backup.categories);
         setAssets(backup.assets);
-        showError('An unexpected error occurred while deleting the category.');
+        showError(result.error);
       }
     });
   }
@@ -894,20 +921,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedCategoryId) return;
     const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId };
     setAssets((prev) => [...prev, tempAsset]);
-    safeAction(async () => {
-      try {
-        const result = await addAsset(name, selectedCategoryId);
-        if (result.error) {
-          setAssets((prev) => prev.filter((a) => a.id !== tempAsset.id));
-          showError(result.error);
-          return;
-        }
-        const created = result.data!;
-        setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? created : a)));
-      } catch (err) {
+    startTransition(async () => {
+      const result = await addAsset(name, selectedCategoryId);
+      if (result.error) {
         setAssets((prev) => prev.filter((a) => a.id !== tempAsset.id));
-        showError('An unexpected error occurred while adding the asset.');
+        showError(result.error);
+        return;
       }
+      const created = result.data!;
+      setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? created : a)));
     });
   }
 
@@ -915,16 +937,11 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const backupAssets = [...assets];
     setAssets((prev) => prev.filter((a) => a.id !== id));
     if (selectedAssetId === id) setSelectedAssetId(null);
-    safeAction(async () => {
-      try {
-        const result = await deleteAsset(id);
-        if (result.error) {
-          setAssets(backupAssets);
-          showError(result.error);
-        }
-      } catch (err) {
+    startTransition(async () => {
+      const result = await deleteAsset(id);
+      if (result.error) {
         setAssets(backupAssets);
-        showError('An unexpected error occurred while deleting the asset.');
+        showError(result.error);
       }
     });
   }
@@ -940,34 +957,26 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
       outputTo: 'next_step', targetStepOrder: undefined, content: '', execType: 'manual',
     };
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: [...existing, tempStep] }));
-    safeAction(async () => {
-      try {
-        const result = await upsertPromptStep({
-          assetId: selectedAssetId, order: newOrder, model: 'claude',
-          content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
-        });
-        if (result.error) {
-          setPromptMap((prev) => ({
-            ...prev,
-            [selectedAssetId]: (prev[selectedAssetId] ?? []).filter((s) => s.id !== tempStep.id),
-          }));
-          showError(result.error);
-          return;
-        }
-        const savedStep = dbPromptToStep(result.data!);
-        setPromptMap((prev) => ({
-          ...prev,
-          [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
-            s.id === tempStep.id ? savedStep : s
-          ),
-        }));
-      } catch (err) {
+    startTransition(async () => {
+      const result = await upsertPromptStep({
+        assetId: selectedAssetId, order: newOrder, model: 'claude',
+        content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
+      });
+      if (result.error) {
         setPromptMap((prev) => ({
           ...prev,
           [selectedAssetId]: (prev[selectedAssetId] ?? []).filter((s) => s.id !== tempStep.id),
         }));
-        showError('An unexpected error occurred while adding the step.');
+        showError(result.error);
+        return;
       }
+      const savedStep = dbPromptToStep(result.data!);
+      setPromptMap((prev) => ({
+        ...prev,
+        [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
+          s.id === tempStep.id ? savedStep : s
+        ),
+      }));
     });
   }
 
@@ -982,35 +991,25 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const current = (promptMap[selectedAssetId] ?? []).find((s) => s.id === id);
     if (!current) return;
     const merged = { ...current, ...patch };
-    safeAction(async () => {
-      try {
-        const result = await upsertPromptStep({
-          id,
-          assetId:         selectedAssetId,
-          order:           merged.order,
-          model:           merged.model,
-          content:         merged.content,
-          outputTo:        merged.outputTo,
-          targetStepOrder: merged.targetStepOrder ?? null,
-          execType:        merged.execType,
-        });
-        if (result.error) {
-          setPromptMap((prev) => ({
-            ...prev,
-            [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
-              s.id === id ? current : s
-            ),
-          }));
-          showError(result.error);
-        }
-      } catch (err) {
+    startTransition(async () => {
+      const result = await upsertPromptStep({
+        id,
+        assetId:         selectedAssetId,
+        order:           merged.order,
+        model:           merged.model,
+        content:         merged.content,
+        outputTo:        merged.outputTo,
+        targetStepOrder: merged.targetStepOrder ?? null,
+        execType:        merged.execType,
+      });
+      if (result.error) {
         setPromptMap((prev) => ({
           ...prev,
           [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
             s.id === id ? current : s
           ),
         }));
-        showError('An unexpected error occurred while updating the step.');
+        showError(result.error);
       }
     });
   }
@@ -1027,22 +1026,17 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         : s
     );
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: cleaned }));
-    safeAction(async () => {
-      try {
-        const result = await deletePromptStep(id, selectedAssetId);
-        if (result.error) {
-          setPromptMap((prev) => ({ ...prev, [selectedAssetId]: backup }));
-          showError(result.error);
-          return;
-        }
-        setPromptMap((prev) => ({
-          ...prev,
-          [selectedAssetId]: result.data!.map(dbPromptToStep),
-        }));
-      } catch (err) {
+    startTransition(async () => {
+      const result = await deletePromptStep(id, selectedAssetId);
+      if (result.error) {
         setPromptMap((prev) => ({ ...prev, [selectedAssetId]: backup }));
-        showError('An unexpected error occurred while deleting the step.');
+        showError(result.error);
+        return;
       }
+      setPromptMap((prev) => ({
+        ...prev,
+        [selectedAssetId]: result.data!.map(dbPromptToStep),
+      }));
     });
   }
 
@@ -1052,17 +1046,9 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedAssetId) return;
     setEngineResult(null); // clear any previous result
 
-    safeEngineAction(async () => {
-      try {
-        const result = await runPromptChain(selectedAssetId);
-        if (result.success) {
-          setEngineResult(result);
-        } else {
-          showError(result.error);
-        }
-      } catch (err) {
-        showError('An unexpected error occurred while running the prompt chain.');
-      }
+    startEngine(async () => {
+      const result = await runPromptChain(selectedAssetId);
+      setEngineResult(result);
     });
   }
 

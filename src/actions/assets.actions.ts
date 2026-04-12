@@ -3,11 +3,13 @@
 /**
  * src/actions/assets.actions.ts
  *
- * All mutations return a result object and rely on optimistic client-side
- * updates instead of revalidating '/assets' immediately. This avoids route
- * refresh-related failures in the edge runtime while keeping the UI fast.
+ * All mutations revalidate '/assets' so the Server Component re-fetches
+ * fresh data on the next navigation. Each action also returns the
+ * created/updated/deleted record so the Client Component can optimistically
+ * update its local state without waiting for a full page refresh.
  */
 
+import { revalidatePath }         from 'next/cache';
 import { eq, asc }                from 'drizzle-orm';
 import { getDb }                  from '@/db';
 import { categories, assets, prompts } from '@/db/schema';
@@ -38,18 +40,13 @@ export type InitialData = {
  * Returns all rows flat; the client groups prompts by assetId.
  */
 export async function getInitialData(): Promise<InitialData> {
-  try {
-    const db = getDb();
-    const [allCategories, allAssets, allPrompts] = await Promise.all([
-      db.select().from(categories),
-      db.select().from(assets),
-      db.select().from(prompts).orderBy(asc(prompts.order)),
-    ]);
-    return { categories: allCategories, assets: allAssets, prompts: allPrompts };
-  } catch (e) {
-    console.error('[getInitialData] failed:', e instanceof Error ? e.message : String(e));
-    throw e;
-  }
+  const db = getDb();
+  const [allCategories, allAssets, allPrompts] = await Promise.all([
+    db.select().from(categories),
+    db.select().from(assets),
+    db.select().from(prompts).orderBy(asc(prompts.order)),
+  ]);
+  return { categories: allCategories, assets: allAssets, prompts: allPrompts };
 }
 
 // ─── Category actions ─────────────────────────────────────────────────────────
@@ -64,12 +61,10 @@ export async function addCategory(
       .insert(categories)
       .values({ name: name.trim() })
       .returning();
-    if (!row) return err('Failed to create category: no row returned from database');
+    revalidatePath('/assets');
     return ok(row);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[addCategory] error:', msg);
-    return err(`Failed to add category. ${msg}`);
+    return err(`Failed to add category: ${String(e)}`);
   }
 }
 
@@ -91,11 +86,10 @@ export async function deleteCategory(
     await db.delete(assets).where(eq(assets.categoryId, id));
     await db.delete(categories).where(eq(categories.id, id));
 
+    revalidatePath('/assets');
     return ok({ deletedId: id });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[deleteCategory] error:', msg);
-    return err(`Failed to delete category. ${msg}`);
+    return err(`Failed to delete category: ${String(e)}`);
   }
 }
 
@@ -113,12 +107,10 @@ export async function addAsset(
       .insert(assets)
       .values({ name: name.trim(), categoryId })
       .returning();
-    if (!row) return err('Failed to create asset: no row returned from database');
+    revalidatePath('/assets');
     return ok(row);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[addAsset] error:', msg);
-    return err(`Failed to add asset. ${msg}`);
+    return err(`Failed to add asset: ${String(e)}`);
   }
 }
 
@@ -130,11 +122,10 @@ export async function deleteAsset(
     // Cascade: delete all prompts for this asset first.
     await db.delete(prompts).where(eq(prompts.assetId, id));
     await db.delete(assets).where(eq(assets.id, id));
+    revalidatePath('/assets');
     return ok({ deletedId: id });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[deleteAsset] error:', msg);
-    return err(`Failed to delete asset. ${msg}`);
+    return err(`Failed to delete asset: ${String(e)}`);
   }
 }
 
@@ -175,8 +166,7 @@ export async function upsertPromptStep(
         })
         .where(eq(prompts.id, input.id))
         .returning();
-
-      if (!row) return err('Failed to update step: no row returned from database');
+      revalidatePath('/assets');
       return ok(row);
     } else {
       // INSERT
@@ -192,13 +182,11 @@ export async function upsertPromptStep(
           execType:        input.execType,
         })
         .returning();
-      if (!row) return err('Failed to create step: no row returned from database');
+      revalidatePath('/assets');
       return ok(row);
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[upsertPromptStep] error:', msg);
-    return err(`Failed to save prompt step. ${msg}`);
+    return err(`Failed to save prompt step: ${String(e)}`);
   }
 }
 
@@ -242,11 +230,9 @@ export async function deletePromptStep(
     });
 
     const reordered = await Promise.all(updates);
-    if (!reordered || reordered.length === 0) return err('Failed to reorder steps: no rows returned from database');
+    revalidatePath('/assets');
     return ok(reordered);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[deletePromptStep] error:', msg);
-    return err(`Failed to delete prompt step. ${msg}`);
+    return err(`Failed to delete prompt step: ${String(e)}`);
   }
 }
