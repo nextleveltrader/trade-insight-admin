@@ -1,0 +1,7 @@
+name = "trade-insight-admin"
+compatibility_date = "2024-04-12"
+
+[[d1_databases]]
+binding = "DB" # আপনার কোডে ডাটাবেসকে এই নামে ডাকা হবে
+database_name = "trade-db" # আপনার তৈরি করা ডাটাবেসের নাম
+database_id = "1155bbd5-e478-4281-a19d-bc34ea8b602f"
