@@ -817,7 +817,28 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   const selectedAsset    = assets.find((a) => a.id === selectedAssetId);
   const currentSteps     = selectedAssetId ? (promptMap[selectedAssetId] ?? []) : [];
 
-  const showError = useCallback((msg: string) => setErrorMsg(msg), []);
+  const showError = useCallback((msg: string) => {
+    console.error('[AssetsManager]', msg);
+    setErrorMsg(msg);
+  }, []);
+
+  const safeAction = useCallback((action: () => Promise<void>) => {
+    startTransition(() => {
+      action().catch((err) => {
+        console.error('[AssetsManager] uncaught action error', err);
+        showError('An unexpected error occurred while processing your request.');
+      });
+    });
+  }, [showError, startTransition]);
+
+  const safeEngineAction = useCallback((action: () => Promise<void>) => {
+    startEngine(() => {
+      action().catch((err) => {
+        console.error('[AssetsManager] uncaught engine error', err);
+        showError('An unexpected error occurred while running the AI pipeline.');
+      });
+    });
+  }, [showError, startEngine]);
 
   // ── Category handlers ──────────────────────────────────────────────────────
 
@@ -829,7 +850,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   function handleAddCategory(name: string) {
     const tempCat: Category = { id: -Date.now(), name };
     setCategories((prev) => [...prev, tempCat]);
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await addCategory(name);
         if (result.error) {
@@ -851,7 +872,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setCategories((prev) => prev.filter((c) => c.id !== id));
     setAssets((prev) => prev.filter((a) => a.categoryId !== id));
     if (selectedCategoryId === id) { setSelectedCategoryId(null); setSelectedAssetId(null); }
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await deleteCategory(id);
         if (result.error) {
@@ -873,7 +894,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedCategoryId) return;
     const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId };
     setAssets((prev) => [...prev, tempAsset]);
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await addAsset(name, selectedCategoryId);
         if (result.error) {
@@ -894,7 +915,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const backupAssets = [...assets];
     setAssets((prev) => prev.filter((a) => a.id !== id));
     if (selectedAssetId === id) setSelectedAssetId(null);
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await deleteAsset(id);
         if (result.error) {
@@ -919,7 +940,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
       outputTo: 'next_step', targetStepOrder: undefined, content: '', execType: 'manual',
     };
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: [...existing, tempStep] }));
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await upsertPromptStep({
           assetId: selectedAssetId, order: newOrder, model: 'claude',
@@ -961,7 +982,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const current = (promptMap[selectedAssetId] ?? []).find((s) => s.id === id);
     if (!current) return;
     const merged = { ...current, ...patch };
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await upsertPromptStep({
           id,
@@ -1006,7 +1027,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         : s
     );
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: cleaned }));
-    startTransition(async () => {
+    safeAction(async () => {
       try {
         const result = await deletePromptStep(id, selectedAssetId);
         if (result.error) {
@@ -1031,7 +1052,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedAssetId) return;
     setEngineResult(null); // clear any previous result
 
-    startEngine(async () => {
+    safeEngineAction(async () => {
       try {
         const result = await runPromptChain(selectedAssetId);
         if (result.success) {
