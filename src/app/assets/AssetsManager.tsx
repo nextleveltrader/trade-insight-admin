@@ -3,34 +3,33 @@
 /**
  * src/app/assets/AssetsManager.tsx  —  Client Component
  *
- * Receives initial data from the Server Component and owns all interactive
- * state. Every mutation calls a Server Action inside startTransition so
- * React marks the update as non-urgent and isPending is true while the
- * round-trip is in flight — used to disable buttons and show spinners.
- *
- * Pattern:
- *   1. Optimistically update local useState (instant UI feedback).
- *   2. Await the Server Action (writes to D1, calls revalidatePath).
- *   3. On error: roll back local state and surface a banner.
- *   4. On success: patch local state with the server-returned row
- *      (so DB-assigned IDs are always correct).
+ * Changes in this revision:
+ *   • Two separate useTransition hooks:
+ *       isPending / startTransition  → CRUD operations (add/delete/update)
+ *       isRunning / startEngine      → AI chain execution
+ *   • EngineResultToast — appears top-right after chain completes, auto-
+ *     dismisses after 10 s or on manual close.
+ *   • "Pipeline Running" overlay on the chain column while isRunning is true.
+ *   • Run All button wired to runPromptChain(assetId).
  */
 
-import { useState, useTransition, useCallback } from 'react';
+import { useState, useTransition, useCallback, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronRight, Zap, Clock, Send, FileText,
   MessageSquare, Layers, Bot, GripVertical, Globe, TrendingUp,
   Sparkles, X, CheckCircle2, ArrowRightCircle, Copy, ClipboardCheck,
-  AlertCircle, Loader2,
+  AlertCircle, Loader2, Activity, CircleCheck, CircleX, ExternalLink,
 } from 'lucide-react';
 
-import type { InitialData }    from '@/actions/assets.actions';
+import type { InitialData }           from '@/actions/assets.actions';
+import type { ChainRunResult }        from '@/actions/engine.actions';
 import type { Category, Asset, DBPrompt } from '@/db/schema';
 import {
-  addCategory, deleteCategory,
-  addAsset,    deleteAsset,
+  addCategory,      deleteCategory,
+  addAsset,         deleteAsset,
   upsertPromptStep, deletePromptStep,
 } from '@/actions/assets.actions';
+import { runPromptChain } from '@/actions/engine.actions';
 
 // ─── Client-side types ────────────────────────────────────────────────────────
 
@@ -38,7 +37,6 @@ type OutputDest = 'next_step' | 'telegram' | 'blog_draft';
 type AIModel    = 'claude' | 'perplexity' | 'gemini' | 'chatgpt';
 type ExecType   = 'manual' | 'scheduled';
 
-// The UI's richer step type (DB row + optional targetStepOrder as number | undefined)
 type PromptStep = {
   id:              number;
   order:           number;
@@ -89,6 +87,110 @@ function buildPromptMap(flatPrompts: DBPrompt[]): Record<number, PromptStep[]> {
 
 function defaultTarget(currentOrder: number, steps: PromptStep[]): number | undefined {
   return steps.find((s) => s.order === currentOrder + 1)?.order;
+}
+
+// ─── Engine Result Toast ──────────────────────────────────────────────────────
+
+function EngineResultToast({
+  result,
+  assetName,
+  onClose,
+}: {
+  result:    ChainRunResult;
+  assetName: string;
+  onClose:   () => void;
+}) {
+  // Auto-dismiss after 10 s
+  useEffect(() => {
+    const t = setTimeout(onClose, 10_000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed top-6 right-6 z-50 w-80 rounded-2xl border shadow-2xl overflow-hidden
+      ${result.success
+        ? 'bg-zinc-900 border-emerald-500/30'
+        : 'bg-zinc-900 border-red-500/30'
+      }`}
+    >
+      {/* Coloured top strip */}
+      <div className={`h-0.5 w-full ${result.success ? 'bg-emerald-500' : 'bg-red-500'}`} />
+
+      <div className="p-4">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              result.success ? 'bg-emerald-500/15' : 'bg-red-500/15'
+            }`}>
+              {result.success
+                ? <CircleCheck size={16} className="text-emerald-400" />
+                : <CircleX     size={16} className="text-red-400"     />
+              }
+            </div>
+            <div>
+              <p className={`text-sm font-semibold ${result.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                {result.success ? 'Chain Complete' : 'Chain Failed'}
+              </p>
+              <p className="text-[10px] text-zinc-500 font-mono">{assetName}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-zinc-600 hover:text-zinc-400 transition-colors mt-0.5">
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[
+            { label: 'Steps Run',   value: `${result.stepsRun} / ${result.totalSteps}` },
+            { label: 'Drafts Made', value: result.postsCreated },
+            { label: 'Status',      value: result.success ? 'OK' : `Step ${result.failedStep ?? '?'}` },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-zinc-800/60 rounded-lg px-2.5 py-2 text-center">
+              <p className="text-xs font-semibold text-zinc-200">{value}</p>
+              <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Error message */}
+        {!result.success && result.error && (
+          <div className="bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2 mb-3">
+            <p className="text-[11px] text-red-300 leading-relaxed font-mono break-words">
+              {result.failedModel && (
+                <span className="font-bold text-red-400">[{result.failedModel}] </span>
+              )}
+              {result.error}
+            </p>
+          </div>
+        )}
+
+        {/* Action links */}
+        {result.success && result.postsCreated > 0 && (
+          <a
+            href="/posts"
+            className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-300 text-xs font-semibold transition-colors"
+          >
+            <ExternalLink size={11} />
+            View {result.postsCreated} new draft{result.postsCreated !== 1 ? 's' : ''} in Posts
+          </a>
+        )}
+      </div>
+
+      {/* Auto-dismiss countdown bar */}
+      <div className={`h-0.5 ${result.success ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
+        <div
+          className={`h-full ${result.success ? 'bg-emerald-500/60' : 'bg-red-500/60'} animate-[shrink_10s_linear_forwards]`}
+          style={{ transformOrigin: 'left', animation: 'shrink 10s linear forwards' }}
+        />
+      </div>
+
+      <style>{`
+        @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+      `}</style>
+    </div>
+  );
 }
 
 // ─── Error Banner ─────────────────────────────────────────────────────────────
@@ -195,28 +297,20 @@ function CategoryColumn({ categories, selectedId, isPending, onSelect, onAdd, on
               className="w-full bg-zinc-800 border border-zinc-700 focus:border-emerald-500/60 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition-colors"
             />
             <div className="flex gap-2">
-              <button
-                onClick={handleAdd}
-                disabled={isPending}
-                className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50"
-              >
+              <button onClick={handleAdd} disabled={isPending}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50">
                 {isPending ? <Loader2 size={11} className="animate-spin" /> : null}
                 Add
               </button>
-              <button
-                onClick={() => setAdding(false)}
-                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-medium py-1.5 rounded-lg transition-colors"
-              >
+              <button onClick={() => setAdding(false)}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-medium py-1.5 rounded-lg transition-colors">
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <button
-            onClick={() => setAdding(true)}
-            disabled={isPending}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-zinc-700 hover:border-emerald-500/40 text-zinc-600 hover:text-emerald-400 text-xs transition-all disabled:opacity-40 disabled:pointer-events-none"
-          >
+          <button onClick={() => setAdding(true)} disabled={isPending}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-zinc-700 hover:border-emerald-500/40 text-zinc-600 hover:text-emerald-400 text-xs transition-all disabled:opacity-40 disabled:pointer-events-none">
             <Plus size={12} />New Category
           </button>
         )}
@@ -259,9 +353,7 @@ function AssetColumn({ assets, selectedId, selectedCategory, isPending, onSelect
           <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center mb-3">
             <Layers size={18} className="text-zinc-700" />
           </div>
-          <p className="text-zinc-600 text-xs leading-relaxed">
-            Select a category<br />to manage assets
-          </p>
+          <p className="text-zinc-600 text-xs leading-relaxed">Select a category<br />to manage assets</p>
         </div>
       ) : (
         <>
@@ -314,28 +406,19 @@ function AssetColumn({ assets, selectedId, selectedCategory, isPending, onSelect
                   className="w-full bg-zinc-800 border border-zinc-700 focus:border-blue-500/60 rounded-lg px-3 py-2 text-sm font-mono text-zinc-200 placeholder-zinc-600 outline-none transition-colors"
                 />
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleAdd}
-                    disabled={isPending}
-                    className="flex-1 flex items-center justify-center gap-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {isPending ? <Loader2 size={11} className="animate-spin" /> : null}
-                    Add
+                  <button onClick={handleAdd} disabled={isPending}
+                    className="flex-1 flex items-center justify-center gap-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                    {isPending ? <Loader2 size={11} className="animate-spin" /> : null}Add
                   </button>
-                  <button
-                    onClick={() => setAdding(false)}
-                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-medium py-1.5 rounded-lg transition-colors"
-                  >
+                  <button onClick={() => setAdding(false)}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-medium py-1.5 rounded-lg transition-colors">
                     Cancel
                   </button>
                 </div>
               </div>
             ) : (
-              <button
-                onClick={() => setAdding(true)}
-                disabled={isPending}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-zinc-700 hover:border-blue-500/40 text-zinc-600 hover:text-blue-400 text-xs transition-all disabled:opacity-40 disabled:pointer-events-none"
-              >
+              <button onClick={() => setAdding(true)} disabled={isPending}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-zinc-700 hover:border-blue-500/40 text-zinc-600 hover:text-blue-400 text-xs transition-all disabled:opacity-40 disabled:pointer-events-none">
                 <Plus size={12} />New Asset
               </button>
             )}
@@ -349,9 +432,7 @@ function AssetColumn({ assets, selectedId, selectedCategory, isPending, onSelect
 // ─── Placeholder Badge ────────────────────────────────────────────────────────
 
 function PlaceholderBadge({ variable, sourceOrder, targetOrder }: {
-  variable:    string;
-  sourceOrder: number;
-  targetOrder: number;
+  variable: string; sourceOrder: number; targetOrder: number;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -379,15 +460,12 @@ function PlaceholderBadge({ variable, sourceOrder, targetOrder }: {
             </span>
             <span className="text-zinc-600 font-mono text-[11px] select-none">{'}'}</span>
           </div>
-          <button
-            onClick={handleCopy}
-            title="Copy variable"
+          <button onClick={handleCopy} title="Copy variable"
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-semibold border transition-all duration-150 flex-shrink-0 ${
               copied
                 ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                 : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
-            }`}
-          >
+            }`}>
             {copied ? <><ClipboardCheck size={11} />Copied!</> : <><Copy size={11} />Copy</>}
           </button>
         </div>
@@ -398,16 +476,18 @@ function PlaceholderBadge({ variable, sourceOrder, targetOrder }: {
 
 // ─── Prompt Card ──────────────────────────────────────────────────────────────
 
-function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
+function PromptCard({ step, allSteps, isPending, isRunning, onUpdate, onDelete, isLast }: {
   step:      PromptStep;
   allSteps:  PromptStep[];
   isPending: boolean;
+  isRunning: boolean;
   onUpdate:  (id: number, patch: Partial<PromptStep>) => void;
   onDelete:  (id: number) => void;
   isLast:    boolean;
 }) {
   const targetableSteps = allSteps.filter((s) => s.order !== step.order);
   const placeholderVar  = `{{step_${step.order}_output}}`;
+  const frozen          = isPending || isRunning;
 
   function handleOutputChange(dest: OutputDest) {
     if (dest === 'next_step') {
@@ -423,7 +503,13 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
         <div className="absolute left-[22px] top-full w-px h-4 bg-gradient-to-b from-zinc-700 to-transparent z-10" />
       )}
 
-      <div className={`bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden transition-colors ${isPending ? 'opacity-60' : 'hover:border-zinc-700'}`}>
+      <div className={`bg-zinc-900 border rounded-xl overflow-hidden transition-all duration-200 ${
+        isRunning
+          ? 'border-zinc-700 opacity-50'
+          : frozen
+          ? 'border-zinc-800 opacity-60'
+          : 'border-zinc-800 hover:border-zinc-700'
+      }`}>
 
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 bg-black/30">
@@ -440,9 +526,7 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
           {/* Manual / Scheduled toggle */}
           <div className="flex items-center gap-0.5 p-0.5 bg-zinc-800 rounded-lg border border-zinc-700/50">
             {(['manual', 'scheduled'] as ExecType[]).map((t) => (
-              <button
-                key={t}
-                disabled={isPending}
+              <button key={t} disabled={frozen}
                 onClick={() => onUpdate(step.id, { execType: t })}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide transition-all ${
                   step.execType === t
@@ -450,27 +534,22 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
                       ? 'bg-violet-500/25 text-violet-300 border border-violet-500/30'
                       : 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/30'
                     : 'text-zinc-600 hover:text-zinc-400 border border-transparent'
-                }`}
-              >
-                {t === 'manual' ? <Zap size={10} /> : <Clock size={10} />}
-                {t}
+                }`}>
+                {t === 'manual' ? <Zap size={10} /> : <Clock size={10} />}{t}
               </button>
             ))}
           </div>
 
-          <button
-            disabled={isPending}
-            onClick={() => onDelete(step.id)}
-            className="p-1.5 rounded-lg hover:bg-red-500/15 text-zinc-600 hover:text-red-400 transition-all disabled:pointer-events-none"
-          >
+          <button disabled={frozen} onClick={() => onDelete(step.id)}
+            className="p-1.5 rounded-lg hover:bg-red-500/15 text-zinc-600 hover:text-red-400 transition-all disabled:pointer-events-none">
             {isPending ? <Loader2 size={13} className="animate-spin text-zinc-600" /> : <X size={13} />}
           </button>
         </div>
 
         {/* Body */}
         <div className="p-4 space-y-4">
-
           <div className="grid grid-cols-2 gap-3">
+
             {/* AI Model */}
             <div>
               <label className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-1.5">
@@ -478,21 +557,17 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
               </label>
               <div className="grid grid-cols-2 gap-1">
                 {AI_MODELS.map((m) => (
-                  <button
-                    key={m.value}
-                    disabled={isPending}
+                  <button key={m.value} disabled={frozen}
                     onClick={() => onUpdate(step.id, { model: m.value })}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border disabled:pointer-events-none ${
                       step.model !== m.value
                         ? 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
                         : ''
                     }`}
-                    style={
-                      step.model === m.value
-                        ? { backgroundColor: m.bg, borderColor: m.color + '55', color: m.color }
-                        : {}
-                    }
-                  >
+                    style={step.model === m.value
+                      ? { backgroundColor: m.bg, borderColor: m.color + '55', color: m.color }
+                      : {}
+                    }>
                     <Bot size={11} />{m.label}
                   </button>
                 ))}
@@ -509,18 +584,14 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
                   const Icon   = o.icon;
                   const active = step.outputTo === o.value;
                   return (
-                    <button
-                      key={o.value}
-                      disabled={isPending}
+                    <button key={o.value} disabled={frozen}
                       onClick={() => handleOutputChange(o.value)}
                       className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:pointer-events-none ${
                         active
                           ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
                           : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
-                      }`}
-                    >
-                      <Icon size={11} />
-                      {o.label}
+                      }`}>
+                      <Icon size={11} />{o.label}
                       {active && <CheckCircle2 size={11} className="ml-auto text-emerald-400" />}
                     </button>
                   );
@@ -549,17 +620,15 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
                     const isSelected  = step.targetStepOrder === s.order;
                     const targetModel = AI_MODELS.find((m) => m.value === s.model)!;
                     return (
-                      <button
-                        key={s.id}
-                        disabled={isPending}
+                      <button key={s.id} disabled={frozen}
                         onClick={() => onUpdate(step.id, { targetStepOrder: s.order })}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:pointer-events-none ${
                           isSelected
                             ? 'bg-blue-500/20 border-blue-500/40 text-blue-200'
                             : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
-                        }`}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: targetModel.color }} />
+                        }`}>
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: targetModel.color }} />
                         Step {s.order}
                         <span className="text-[9px] opacity-60">({targetModel.label})</span>
                         {isSelected && <CheckCircle2 size={10} className="text-blue-400" />}
@@ -594,7 +663,7 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
             </label>
             <textarea
               value={step.content}
-              disabled={isPending}
+              disabled={frozen}
               onChange={(e) => onUpdate(step.id, { content: e.target.value })}
               placeholder="You are a professional financial analyst. Analyze the latest market data for the selected asset and provide a concise technical outlook…"
               rows={4}
@@ -609,23 +678,37 @@ function PromptCard({ step, allSteps, isPending, onUpdate, onDelete, isLast }: {
 
 // ─── Prompt Chain Column ──────────────────────────────────────────────────────
 
-function PromptChainColumn({ selectedAsset, steps, isPending, onAddStep, onUpdateStep, onDeleteStep }: {
+function PromptChainColumn({
+  selectedAsset, steps, isPending, isRunning,
+  onAddStep, onUpdateStep, onDeleteStep, onRunAll,
+}: {
   selectedAsset: Asset | undefined;
   steps:         PromptStep[];
   isPending:     boolean;
+  isRunning:     boolean;
   onAddStep:     () => void;
   onUpdateStep:  (id: number, patch: Partial<PromptStep>) => void;
   onDeleteStep:  (id: number) => void;
+  onRunAll:      () => void;
 }) {
+  const anyBusy = isPending || isRunning;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-5">
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5 flex-shrink-0">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={14} className="text-emerald-400" />
+            <Sparkles size={14} className={isRunning ? 'text-emerald-400 animate-pulse' : 'text-emerald-400'} />
             <span className="text-[10px] font-semibold tracking-[0.15em] uppercase text-zinc-500">
               Automation Pipeline
             </span>
+            {isRunning && (
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-[9px] font-bold text-emerald-400 uppercase tracking-wider animate-pulse">
+                <Activity size={9} />Live
+              </span>
+            )}
           </div>
           <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
             {selectedAsset ? (
@@ -638,17 +721,68 @@ function PromptChainColumn({ selectedAsset, steps, isPending, onAddStep, onUpdat
 
         {selectedAsset && (
           <div className="flex items-center gap-2">
-            {isPending && <Loader2 size={13} className="text-zinc-500 animate-spin" />}
+            {isPending && !isRunning && (
+              <Loader2 size={13} className="text-zinc-500 animate-spin" />
+            )}
             <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md text-[10px] text-zinc-400 font-medium">
               {steps.length} step{steps.length !== 1 ? 's' : ''}
             </span>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 rounded-lg text-xs font-semibold transition-all">
-              <Zap size={11} />Run All
+
+            {/* ── Run All button ── */}
+            <button
+              onClick={onRunAll}
+              disabled={anyBusy || steps.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:pointer-events-none ${
+                isRunning
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300 cursor-not-allowed'
+                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/25 text-emerald-300'
+              }`}
+            >
+              {isRunning
+                ? <><Loader2 size={11} className="animate-spin" />Running…</>
+                : <><Zap size={11} />Run All</>
+              }
             </button>
           </div>
         )}
       </div>
 
+      {/* ── Pipeline running overlay ── */}
+      {isRunning && selectedAsset && (
+        <div className="mb-4 flex-shrink-0 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                <Activity size={14} className="text-emerald-400" />
+              </div>
+              {/* Pulse ring */}
+              <div className="absolute inset-0 rounded-lg border border-emerald-500/40 animate-ping" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-emerald-300">AI Pipeline Running</p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Executing {steps.length} step{steps.length !== 1 ? 's' : ''} sequentially…
+                this may take a minute.
+              </p>
+            </div>
+          </div>
+          {/* Indeterminate progress bar */}
+          <div className="mt-3 h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500/60 rounded-full animate-[progress_2s_ease-in-out_infinite]"
+              style={{ animation: 'progress 2s ease-in-out infinite' }}
+            />
+          </div>
+          <style>{`
+            @keyframes progress {
+              0%   { margin-left: 0%;   width: 0%;   }
+              50%  { margin-left: 25%;  width: 50%;  }
+              100% { margin-left: 100%; width: 0%;   }
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* Body */}
       {!selectedAsset ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center">
           <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-4">
@@ -676,6 +810,7 @@ function PromptChainColumn({ selectedAsset, steps, isPending, onAddStep, onUpdat
               step={step}
               allSteps={steps}
               isPending={isPending}
+              isRunning={isRunning}
               onUpdate={onUpdateStep}
               onDelete={onDeleteStep}
               isLast={idx === steps.length - 1}
@@ -684,7 +819,7 @@ function PromptChainColumn({ selectedAsset, steps, isPending, onAddStep, onUpdat
 
           <button
             onClick={onAddStep}
-            disabled={isPending}
+            disabled={anyBusy}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-zinc-700 hover:border-emerald-500/40 text-zinc-600 hover:text-emerald-400 text-xs font-medium transition-all hover:bg-emerald-400/5 disabled:opacity-40 disabled:pointer-events-none"
           >
             {isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
@@ -699,19 +834,24 @@ function PromptChainColumn({ selectedAsset, steps, isPending, onAddStep, onUpdat
 // ─── AssetsManager (root client component) ────────────────────────────────────
 
 export default function AssetsManager({ initialData }: { initialData: InitialData }) {
-  // ── State initialised from server-fetched data ─────────────────────────────
+  // ── Data state ─────────────────────────────────────────────────────────────
   const [categories, setCategories] = useState<Category[]>(initialData.categories);
   const [assets,     setAssets]     = useState<Asset[]>(initialData.assets);
   const [promptMap,  setPromptMap]  = useState<Record<number, PromptStep[]>>(
     () => buildPromptMap(initialData.prompts)
   );
 
+  // ── UI state ───────────────────────────────────────────────────────────────
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedAssetId,    setSelectedAssetId]    = useState<number | null>(null);
   const [errorMsg,           setErrorMsg]           = useState<string | null>(null);
+  const [engineResult,       setEngineResult]       = useState<ChainRunResult | null>(null);
 
-  // Single transition covers all in-flight actions
+  // ── Two independent transitions ────────────────────────────────────────────
+  // isPending  → CRUD (add/delete/update) — keeps UI responsive during saves
+  // isRunning  → AI chain execution       — can take 30–120 s; blocks Run All only
   const [isPending, startTransition] = useTransition();
+  const [isRunning, startEngine]     = useTransition();
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
@@ -729,10 +869,8 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   }
 
   function handleAddCategory(name: string) {
-    // Optimistic: temp row with id=-1 (replaced on success)
     const tempCat: Category = { id: -Date.now(), name };
     setCategories((prev) => [...prev, tempCat]);
-
     startTransition(async () => {
       const result = await addCategory(name);
       if (result.error) {
@@ -740,8 +878,8 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         showError(result.error);
         return;
       }
-      // Replace temp row with real DB row (gets autoincrement id)
-      setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? result.data! : c)));
+      const created = result.data!;
+      setCategories((prev) => prev.map((c) => (c.id === tempCat.id ? created : c)));
     });
   }
 
@@ -750,7 +888,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     setCategories((prev) => prev.filter((c) => c.id !== id));
     setAssets((prev) => prev.filter((a) => a.categoryId !== id));
     if (selectedCategoryId === id) { setSelectedCategoryId(null); setSelectedAssetId(null); }
-
     startTransition(async () => {
       const result = await deleteCategory(id);
       if (result.error) {
@@ -767,7 +904,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedCategoryId) return;
     const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId };
     setAssets((prev) => [...prev, tempAsset]);
-
     startTransition(async () => {
       const result = await addAsset(name, selectedCategoryId);
       if (result.error) {
@@ -775,7 +911,8 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         showError(result.error);
         return;
       }
-      setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? result.data! : a)));
+      const created = result.data!;
+      setAssets((prev) => prev.map((a) => (a.id === tempAsset.id ? created : a)));
     });
   }
 
@@ -783,7 +920,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const backupAssets = [...assets];
     setAssets((prev) => prev.filter((a) => a.id !== id));
     if (selectedAssetId === id) setSelectedAssetId(null);
-
     startTransition(async () => {
       const result = await deleteAsset(id);
       if (result.error) {
@@ -799,28 +935,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     if (!selectedAssetId) return;
     const existing = promptMap[selectedAssetId] ?? [];
     const newOrder = existing.length + 1;
-
-    // Optimistic temp step with negative id
     const tempStep: PromptStep = {
-      id:              -Date.now(),
-      order:           newOrder,
-      model:           'claude',
-      outputTo:        'next_step',
-      targetStepOrder: undefined,
-      content:         '',
-      execType:        'manual',
+      id: -Date.now(), order: newOrder, model: 'claude',
+      outputTo: 'next_step', targetStepOrder: undefined, content: '', execType: 'manual',
     };
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: [...existing, tempStep] }));
-
     startTransition(async () => {
       const result = await upsertPromptStep({
-        assetId:         selectedAssetId,
-        order:           newOrder,
-        model:           'claude',
-        content:         '',
-        outputTo:        'next_step',
-        targetStepOrder: null,
-        execType:        'manual',
+        assetId: selectedAssetId, order: newOrder, model: 'claude',
+        content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
       });
       if (result.error) {
         setPromptMap((prev) => ({
@@ -830,11 +953,11 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         showError(result.error);
         return;
       }
-      // Swap temp row for real DB row
+      const savedStep = dbPromptToStep(result.data!);
       setPromptMap((prev) => ({
         ...prev,
         [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
-          s.id === tempStep.id ? dbPromptToStep(result.data!) : s
+          s.id === tempStep.id ? savedStep : s
         ),
       }));
     });
@@ -842,20 +965,15 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
 
   function handleUpdateStep(id: number, patch: Partial<PromptStep>) {
     if (!selectedAssetId) return;
-
-    // Optimistic update immediately
     setPromptMap((prev) => ({
       ...prev,
       [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
         s.id === id ? { ...s, ...patch } : s
       ),
     }));
-
-    // Find the merged step to persist
     const current = (promptMap[selectedAssetId] ?? []).find((s) => s.id === id);
     if (!current) return;
     const merged = { ...current, ...patch };
-
     startTransition(async () => {
       const result = await upsertPromptStep({
         id,
@@ -868,7 +986,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         execType:        merged.execType,
       });
       if (result.error) {
-        // Roll back to pre-patch state
         setPromptMap((prev) => ({
           ...prev,
           [selectedAssetId]: (prev[selectedAssetId] ?? []).map((s) =>
@@ -883,8 +1000,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   function handleDeleteStep(id: number) {
     if (!selectedAssetId) return;
     const backup = [...(promptMap[selectedAssetId] ?? [])];
-
-    // Optimistic: remove locally and re-sequence
     const filtered  = backup.filter((s) => s.id !== id);
     const reordered = filtered.map((s, i) => ({ ...s, order: i + 1 }));
     const validOrders = new Set(reordered.map((s) => s.order));
@@ -894,7 +1009,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         : s
     );
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: cleaned }));
-
     startTransition(async () => {
       const result = await deletePromptStep(id, selectedAssetId);
       if (result.error) {
@@ -902,11 +1016,22 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         showError(result.error);
         return;
       }
-      // Sync with authoritative server-reordered rows
       setPromptMap((prev) => ({
         ...prev,
         [selectedAssetId]: result.data!.map(dbPromptToStep),
       }));
+    });
+  }
+
+  // ── Engine handler ─────────────────────────────────────────────────────────
+
+  function handleRunAll() {
+    if (!selectedAssetId) return;
+    setEngineResult(null); // clear any previous result
+
+    startEngine(async () => {
+      const result = await runPromptChain(selectedAssetId);
+      setEngineResult(result);
     });
   }
 
@@ -916,6 +1041,14 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     <div className="flex flex-col h-full">
       {errorMsg && (
         <ErrorBanner message={errorMsg} onClose={() => setErrorMsg(null)} />
+      )}
+
+      {engineResult && (
+        <EngineResultToast
+          result={engineResult}
+          assetName={selectedAsset?.name ?? 'Asset'}
+          onClose={() => setEngineResult(null)}
+        />
       )}
 
       {/* Page title bar */}
@@ -929,12 +1062,17 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
           </p>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg">
-          {isPending
-            ? <Loader2 size={10} className="text-emerald-400 animate-spin" />
+          {isRunning
+            ? <Activity size={10} className="text-emerald-400 animate-pulse" />
+            : isPending
+            ? <Loader2  size={10} className="text-emerald-400 animate-spin" />
             : <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           }
           <span className="text-xs text-zinc-400 font-medium">
-            {categories.length} categories · {assets.length} assets
+            {isRunning
+              ? 'Pipeline running…'
+              : `${categories.length} categories · ${assets.length} assets`
+            }
           </span>
         </div>
       </div>
@@ -970,9 +1108,11 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
             selectedAsset={selectedAsset}
             steps={currentSteps}
             isPending={isPending}
+            isRunning={isRunning}
             onAddStep={handleAddStep}
             onUpdateStep={handleUpdateStep}
             onDeleteStep={handleDeleteStep}
+            onRunAll={handleRunAll}
           />
         </div>
       </div>
