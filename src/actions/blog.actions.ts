@@ -1,13 +1,26 @@
 'use server';
 
-import { db } from '@/lib/db';
-import { posts } from '@/lib/schema';
-import { desc, eq } from 'drizzle-orm';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { getDb } from '@/db';
+import { posts } from '@/db/schema';
+import { desc, eq, and, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Post = typeof posts.$inferSelect;
+export type PublishedPost = {
+  id: number;
+  title: string;
+  content: string;
+  status: string;
+  assetId: number | null;
+  createdAt: number;
+  category: string | null;
+  tags: string | null;
+  slug: string | null;
+  metaDescription: string | null;
+  metaKeywords: string | null;
+};
 
 export type PostFormData = {
   title: string;
@@ -16,46 +29,67 @@ export type PostFormData = {
   status: 'draft' | 'published';
 };
 
-// ── Read ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Fetch every post (drafts + published), newest first.
- * Used by the admin /posts listing page.
- */
-export async function getAllPosts(): Promise<Post[]> {
-  return db.select().from(posts).orderBy(desc(posts.createdAt));
+function getDatabase() {
+  return getDb();
 }
 
-/**
- * Fetch a single post by ID. Returns undefined when not found.
- */
-export async function getPostById(id: string): Promise<Post | undefined> {
-  const result = await db
-    .select()
-    .from(posts)
-    .where(eq(posts.id, id))
-    .limit(1);
-  return result[0];
-}
+// ─── Public Blog Actions ──────────────────────────────────────────────────────
 
-/**
- * Fetch only published posts, newest first.
- * Safe to call from public-facing pages.
- */
-export async function getPublishedPosts(): Promise<Post[]> {
-  return db
+export async function getPublishedPosts() {
+  const db = getDatabase();
+  return await db
     .select()
     .from(posts)
     .where(eq(posts.status, 'published'))
     .orderBy(desc(posts.createdAt));
 }
 
-// ── Create ─────────────────────────────────────────────────────────────────
+export async function getPostBySlug(slugOrId: string) {
+  if (!slugOrId || typeof slugOrId !== 'string') return null;
+
+  const db = getDatabase();
+  const isNumeric = /^\d+$/.test(slugOrId);
+
+  const lookupCondition = isNumeric
+    ? or(eq(posts.id, parseInt(slugOrId, 10)), eq(posts.slug, slugOrId))
+    : eq(posts.slug, slugOrId);
+
+  const [row] = await db
+    .select()
+    .from(posts)
+    .where(and(lookupCondition, eq(posts.status, 'published')))
+    .limit(1);
+
+  return row ?? null;
+}
+
+// ─── Admin CMS Actions (CRUD) ─────────────────────────────────────────────────
+
+export async function getAllPosts() {
+  const db = getDatabase();
+  return await db.select().from(posts).orderBy(desc(posts.createdAt));
+}
+
+export async function getPostById(id: string | number) {
+  const db = getDatabase();
+  const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+  
+  const [post] = await db
+    .select()
+    .from(posts)
+    .where(eq(posts.id, numericId))
+    .limit(1);
+    
+  return post || undefined;
+}
 
 export async function createPost(
   data: PostFormData
-): Promise<{ success: true; id: string } | { success: false; error: string }> {
+): Promise<{ success: true; id: number } | { success: false; error: string }> {
   try {
+    const db = getDatabase();
     const result = await db
       .insert(posts)
       .values({
@@ -63,8 +97,7 @@ export async function createPost(
         slug: data.slug,
         content: data.content,
         status: data.status,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: Date.now(), // SQLiteInteger expects a number (timestamp)
       })
       .returning({ id: posts.id });
 
@@ -81,21 +114,25 @@ export async function createPost(
   }
 }
 
-// ── Update ─────────────────────────────────────────────────────────────────
-
 export async function updatePost(
-  id: string,
+  id: string | number,
   data: Partial<PostFormData>
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
+    const db = getDatabase();
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+
     await db
       .update(posts)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(posts.id, id));
+      .set(data)
+      .where(eq(posts.id, numericId));
 
     revalidatePath('/posts');
-    revalidatePath(`/posts/${id}`);
+    revalidatePath(`/posts/${numericId}`);
     revalidatePath('/blog');
+    if (data.slug) {
+      revalidatePath(`/blog/${data.slug}`);
+    }
 
     return { success: true };
   } catch (err) {
@@ -107,13 +144,14 @@ export async function updatePost(
   }
 }
 
-// ── Delete ─────────────────────────────────────────────────────────────────
-
 export async function deletePost(
-  id: string
+  id: string | number
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    await db.delete(posts).where(eq(posts.id, id));
+    const db = getDatabase();
+    const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+
+    await db.delete(posts).where(eq(posts.id, numericId));
 
     revalidatePath('/posts');
     revalidatePath('/blog');
@@ -128,12 +166,9 @@ export async function deletePost(
   }
 }
 
-// ── Slug helpers ────────────────────────────────────────────────────────────
+// ─── Slug helpers ────────────────────────────────────────────────────────────
 
-/**
- * Generate a URL-safe slug from an arbitrary string.
- */
-export function generateSlug(title: string): string {
+export async function generateSlug(title: string): Promise<string> {
   return title
     .toLowerCase()
     .replace(/[^\w\s-]/g, '')
