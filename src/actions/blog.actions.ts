@@ -1,6 +1,5 @@
 'use server';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
 import { getDb } from '@/db';
 import { posts } from '@/db/schema';
 import { eq, desc, and, or } from 'drizzle-orm';

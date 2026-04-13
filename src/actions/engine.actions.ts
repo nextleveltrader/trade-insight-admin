@@ -1,4 +1,12 @@
+// src/actions/engine.actions.ts
 'use server';
+import { checkAuth } from './auth.actions';
+
+export async function runEngine(assetId: number) { // eslint-disable-line @typescript-eslint/no-unused-vars
+  await checkAuth(); // ← throws a redirect if not authenticated
+  // TODO: Implement engine logic using assetId
+  // ... rest of your logic
+}
 
 /**
  * src/actions/engine.actions.ts
