@@ -3,13 +3,11 @@
 /**
  * src/actions/assets.actions.ts
  *
- * All mutations revalidate '/assets' so the Server Component re-fetches
- * fresh data on the next navigation. Each action also returns the
- * created/updated/deleted record so the Client Component can optimistically
- * update its local state without waiting for a full page refresh.
+ * All mutations return a result object and rely on optimistic client-side
+ * state updates instead of immediately revalidating '/assets'. This avoids
+ * route refresh-related failures in edge/Pages environments.
  */
 
-import { revalidatePath }         from 'next/cache';
 import { eq, asc }                from 'drizzle-orm';
 import { getDb }                  from '@/db';
 import { categories, assets, prompts } from '@/db/schema';
@@ -61,7 +59,6 @@ export async function addCategory(
       .insert(categories)
       .values({ name: name.trim() })
       .returning();
-    revalidatePath('/assets');
     return ok(row);
   } catch (e) {
     return err(`Failed to add category: ${String(e)}`);
@@ -86,7 +83,6 @@ export async function deleteCategory(
     await db.delete(assets).where(eq(assets.categoryId, id));
     await db.delete(categories).where(eq(categories.id, id));
 
-    revalidatePath('/assets');
     return ok({ deletedId: id });
   } catch (e) {
     return err(`Failed to delete category: ${String(e)}`);
@@ -107,7 +103,6 @@ export async function addAsset(
       .insert(assets)
       .values({ name: name.trim(), categoryId })
       .returning();
-    revalidatePath('/assets');
     return ok(row);
   } catch (e) {
     return err(`Failed to add asset: ${String(e)}`);
@@ -122,7 +117,6 @@ export async function deleteAsset(
     // Cascade: delete all prompts for this asset first.
     await db.delete(prompts).where(eq(prompts.assetId, id));
     await db.delete(assets).where(eq(assets.id, id));
-    revalidatePath('/assets');
     return ok({ deletedId: id });
   } catch (e) {
     return err(`Failed to delete asset: ${String(e)}`);
@@ -179,7 +173,7 @@ export async function upsertPromptStep(
         })
         .where(eq(prompts.id, input.id))
         .returning();
-      revalidatePath('/assets');
+
       return ok(row);
     } else {
       // INSERT
@@ -196,7 +190,6 @@ export async function upsertPromptStep(
           execType:        input.execType,
         })
         .returning();
-      revalidatePath('/assets');
       return ok(row);
     }
   } catch (e) {
@@ -244,7 +237,6 @@ export async function deletePromptStep(
     });
 
     const reordered = await Promise.all(updates);
-    revalidatePath('/assets');
     return ok(reordered);
   } catch (e) {
     return err(`Failed to delete prompt step: ${String(e)}`);
