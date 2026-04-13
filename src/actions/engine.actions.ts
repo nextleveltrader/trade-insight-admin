@@ -16,7 +16,7 @@
  *          GEMINI_FALLBACK_MODELS until one succeeds. This is necessary because the
  *          Gemini free tier inconsistently returns 404 for valid model names.
  *   5. Routes the output: stores it for the next step, saves a blog draft,
- *      or logs it for Telegram (to be wired up later).
+ *      or sends it to a Telegram chat via the Bot API.
  *
  * API keys are read from Cloudflare Secrets via getRequestContext().env —
  * they are never exposed to the client.
@@ -36,6 +36,8 @@ type CloudflareEnv = {
   OPENAI_API_KEY:      string;
   GEMINI_API_KEY:      string;
   PERPLEXITY_API_KEY:  string;
+  TELEGRAM_BOT_TOKEN:  string;
+  TELEGRAM_CHAT_ID:    string;
 };
 
 // ─── Model tier types ─────────────────────────────────────────────────────────
@@ -177,6 +179,53 @@ function resolvePlaceholders(
     const order = parseInt(num, 10);
     return stepOutputs[order] ?? `[Output of Step ${order} not available]`;
   });
+}
+
+// ─── Telegram helper ──────────────────────────────────────────────────────────
+
+/**
+ * Sends a text message to a Telegram chat via the Bot API.
+ *
+ * Failures are intentionally non-fatal: a Telegram delivery error must never
+ * crash the prompt chain. Errors are logged to Wrangler / Workers logs so
+ * they remain visible without surfacing to the end user.
+ *
+ * Telegram message length limit is 4 096 UTF-16 code units. Messages that
+ * exceed this are silently truncated with a trailing ellipsis so the Bot API
+ * does not reject the request.
+ */
+async function sendToTelegram(
+  token:  string,
+  chatId: string,
+  text:   string,
+): Promise<void> {
+  const MAX_LENGTH = 4096;
+  const safeText =
+    text.length > MAX_LENGTH
+      ? text.slice(0, MAX_LENGTH - 1) + '…'
+      : text;
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+  try {
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text:    safeText,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(
+        `[Engine → Telegram] Delivery failed — HTTP ${res.status}: ${body.slice(0, 300)}`,
+      );
+    }
+  } catch (networkErr) {
+    console.error('[Engine → Telegram] Network error while sending message:', networkErr);
+  }
 }
 
 // ─── AI caller functions ──────────────────────────────────────────────────────
@@ -596,13 +645,12 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
         postsCreated++;
 
       } else if (step.outputTo === 'telegram') {
-        // Telegram integration will be wired up in a future iteration.
-        // For now we log the first 500 chars so it's visible in Wrangler logs.
-        console.log(
-          `[Engine → Telegram | Asset: ${assetName} | Step ${step.order}]\n` +
-          output.slice(0, 500) +
-          (output.length > 500 ? '…' : ''),
-        );
+        const message =
+          `🤖 Asset: ${assetName} | Step: ${step.order}\n` +
+          `━━━━━━━━━━━━━━━━━━━━━\n` +
+          output;
+
+        await sendToTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, message);
 
       }
       // outputTo === 'next_step': output is already in stepOutputs — nothing else to do.
