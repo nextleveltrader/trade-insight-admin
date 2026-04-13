@@ -1,19 +1,39 @@
+'use server';
+
+import { cookies }  from 'next/headers';
+import { redirect } from 'next/navigation';
+
+const COOKIE_NAME   = 'admin_session';
+const SESSION_LABEL = 'admin-session-v1';
+
+function getAdminPassword(): string | undefined {
+  return process.env.ADMIN_PASSWORD;
+}
+
+async function deriveSessionToken(password: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(password),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false, ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_LABEL));
+  return Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export async function login(password: string): Promise<{ error?: string }> {
   try {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-
-    // Debug logging
-    console.error('[auth-debug] adminPassword exists:', !!adminPassword);
-    console.error('[auth-debug] adminPassword length:', adminPassword?.length ?? 0);
-    console.error('[auth-debug] input password length:', password.length);
-    console.error('[auth-debug] passwords match:', password === adminPassword);
+    const adminPassword = getAdminPassword();
 
     if (!adminPassword) {
+      console.error('[auth] ADMIN_PASSWORD not set');
       return { error: 'ADMIN_PASSWORD is not set in environment.' };
     }
 
     if (password !== adminPassword) {
-      return { error: `Incorrect password. (Input: "${password.slice(0,3)}...", Expected length: ${adminPassword.length})` };
+      return { error: 'Incorrect password.' };
     }
 
     const token       = await deriveSessionToken(adminPassword);
@@ -32,4 +52,22 @@ export async function login(password: string): Promise<{ error?: string }> {
     console.error('[auth] login error:', err);
     return { error: `Unexpected error: ${String(err)}` };
   }
+}
+
+export async function logout(): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.delete(COOKIE_NAME);
+  redirect('/login');
+}
+
+export async function checkAuth(): Promise<void> {
+  const adminPassword = getAdminPassword();
+  const cookieStore   = await cookies();
+  const session       = cookieStore.get(COOKIE_NAME)?.value;
+
+  if (!adminPassword || !session) redirect('/login');
+
+  const expectedToken = await deriveSessionToken(adminPassword!);
+
+  if (session !== expectedToken) redirect('/login');
 }
