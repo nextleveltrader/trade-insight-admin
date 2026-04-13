@@ -12,7 +12,7 @@ export type PublishedPost = {
   id: number;
   title: string;
   content: string;
-  status: 'draft' | 'published'; // <-- শুধু এই লাইনটা চেঞ্জ হবে
+  status: 'draft' | 'published';
   assetId: number | null;
   createdAt: number;
   category: string | null;
@@ -37,16 +37,19 @@ function getDatabase() {
 
 // ─── Public Blog Actions ──────────────────────────────────────────────────────
 
-export async function getPublishedPosts() {
+export async function getPublishedPosts(): Promise<PublishedPost[]> {
   const db = getDatabase();
-  return await db
+  const rows = await db
     .select()
     .from(posts)
     .where(eq(posts.status, 'published'))
     .orderBy(desc(posts.createdAt));
+    
+  // ⚡️ FIX: Casting the result to PublishedPost[]
+  return rows as PublishedPost[];
 }
 
-export async function getPostBySlug(slugOrId: string) {
+export async function getPostBySlug(slugOrId: string): Promise<PublishedPost | null> {
   if (!slugOrId || typeof slugOrId !== 'string') return null;
 
   const db = getDatabase();
@@ -62,17 +65,21 @@ export async function getPostBySlug(slugOrId: string) {
     .where(and(lookupCondition, eq(posts.status, 'published')))
     .limit(1);
 
-  return row ?? null;
+  // ⚡️ FIX: Casting the result
+  return (row as PublishedPost) ?? null;
 }
 
 // ─── Admin CMS Actions (CRUD) ─────────────────────────────────────────────────
 
-export async function getAllPosts() {
+export async function getAllPosts(): Promise<PublishedPost[]> {
   const db = getDatabase();
-  return await db.select().from(posts).orderBy(desc(posts.createdAt));
+  const rows = await db.select().from(posts).orderBy(desc(posts.createdAt));
+  
+  // ⚡️ FIX: Casting the result
+  return rows as PublishedPost[];
 }
 
-export async function getPostById(id: string | number) {
+export async function getPostById(id: string | number): Promise<PublishedPost | undefined> {
   const db = getDatabase();
   const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
   
@@ -82,7 +89,8 @@ export async function getPostById(id: string | number) {
     .where(eq(posts.id, numericId))
     .limit(1);
     
-  return post || undefined;
+  // ⚡️ FIX: Casting the result
+  return (post as PublishedPost) || undefined;
 }
 
 export async function createPost(
@@ -97,7 +105,7 @@ export async function createPost(
         slug: data.slug,
         content: data.content,
         status: data.status,
-        createdAt: Date.now(), // SQLiteInteger expects a number (timestamp)
+        createdAt: Date.now(), 
       })
       .returning({ id: posts.id });
 
