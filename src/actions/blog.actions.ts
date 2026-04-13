@@ -3,7 +3,7 @@
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { getDb } from '@/db';
 import { posts } from '@/db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, or } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,8 @@ export async function getPublishedPosts(): Promise<PublishedPost[]> {
 }
 
 /**
- * Fetch a single published post by its URL slug.
+ * Fetch a single published post by its URL slug or numeric ID.
+ * Handles both /blog/my-slug and /blog/5 URL patterns.
  * Returns `null` when no matching post is found.
  */
 export async function getPostBySlug(slug: string): Promise<PublishedPost | null> {
@@ -62,15 +63,28 @@ export async function getPostBySlug(slug: string): Promise<PublishedPost | null>
 
   const db = getDatabase();
 
+  // Check if the slug parameter is a numeric ID
+  const numericId = Number(slug);
+  const isNumericId = (slug !== '' && !Number.isNaN(numericId) && Number.isInteger(numericId));
+
+  // Build the where condition based on whether we have a numeric ID or a text slug
+  const whereCondition = isNumericId
+    ? and(
+        or(
+          eq(posts.id, numericId),
+          eq(posts.slug, slug),
+        ),
+        eq(posts.status, 'published'),
+      )
+    : and(
+        eq(posts.slug, slug),
+        eq(posts.status, 'published'),
+      );
+
   const [row] = await db
     .select()
     .from(posts)
-    .where(
-      and(
-        eq(posts.slug, slug),
-        eq(posts.status, 'published'),
-      ),
-    )
+    .where(whereCondition)
     .limit(1);
 
   return row ?? null;
