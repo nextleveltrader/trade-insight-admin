@@ -1,42 +1,39 @@
 'use server';
 
-import { cookies } from 'next/headers';
-import { redirect }  from 'next/navigation';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+import { cookies }            from 'next/headers';
+import { redirect }           from 'next/navigation';
+import { getRequestContext }  from '@cloudflare/next-on-pages';
 
 const COOKIE_NAME   = 'admin_session';
-const SESSION_LABEL = 'admin-session-v1'; // bump this string to invalidate all sessions
+const SESSION_LABEL = 'admin-session-v1';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Env helper ───────────────────────────────────────────────────────────────
 
-/**
- * Derives a deterministic, unforgeable token by HMAC-SHA-256 signing a fixed
- * label with the admin password as the key.  Uses the Web Crypto API so it
- * works on both Cloudflare Edge Runtime and Node.js.
- */
+function getAdminPassword(): string | undefined {
+  try {
+    const { env } = getRequestContext();
+    return (env as Record<string, string>).ADMIN_PASSWORD;
+  } catch {
+    // Local `next dev` fallback — getRequestContext() throws outside CF runtime
+    return process.env.ADMIN_PASSWORD;
+  }
+}
+
+// ─── Crypto helpers ───────────────────────────────────────────────────────────
+
 async function deriveSessionToken(password: string): Promise<string> {
   const enc = new TextEncoder();
-
   const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
+    'raw', enc.encode(password),
     { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
+    false, ['sign'],
   );
-
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_LABEL));
-
   return Array.from(new Uint8Array(sig))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-/**
- * Timing-safe byte comparison via Web Crypto — prevents timing-attack leaks
- * when comparing the cookie value to the expected token.
- */
 async function safeCompare(a: string, b: string): Promise<boolean> {
   const enc  = new TextEncoder();
   const keyA = await crypto.subtle.importKey('raw', enc.encode(a), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -46,7 +43,6 @@ async function safeCompare(a: string, b: string): Promise<boolean> {
     crypto.subtle.sign('HMAC', keyA, nonce),
     crypto.subtle.sign('HMAC', keyB, nonce),
   ]);
-  // If a === b, sigA and sigB will be identical byte-for-byte
   const ua = new Uint8Array(sigA);
   const ub = new Uint8Array(sigB);
   let diff = 0;
@@ -54,33 +50,36 @@ async function safeCompare(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
-// ─── Auth Actions ─────────────────────────────────────────────────────────────
+// ─── Auth actions ─────────────────────────────────────────────────────────────
 
 export async function login(password: string): Promise<{ error?: string }> {
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  try {
+    const adminPassword = getAdminPassword();
 
-  if (!adminPassword) {
-    console.error('[auth] ADMIN_PASSWORD environment variable is not set.');
-    return { error: 'Server misconfiguration. Contact the administrator.' };
+    if (!adminPassword) {
+      console.error('[auth] ADMIN_PASSWORD is not set in environment.');
+      return { error: 'Server misconfiguration. Contact administrator.' };
+    }
+
+    const match = await safeCompare(password, adminPassword);
+    if (!match) return { error: 'Incorrect password.' };
+
+    const token       = await deriveSessionToken(adminPassword);
+    const cookieStore = await cookies();
+
+    cookieStore.set(COOKIE_NAME, token, {
+      httpOnly : true,
+      secure   : process.env.NODE_ENV === 'production',
+      sameSite : 'lax',
+      path     : '/',
+      maxAge   : 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return {};
+  } catch (err) {
+    console.error('[auth] login error:', err);
+    return { error: 'An unexpected error occurred.' };
   }
-
-  const match = await safeCompare(password, adminPassword);
-  if (!match) {
-    return { error: 'Incorrect password.' };
-  }
-
-  const token       = await deriveSessionToken(adminPassword);
-  const cookieStore = await cookies();
-
-  cookieStore.set(COOKIE_NAME, token, {
-    httpOnly : true,
-    secure   : true,          // HTTPS only — Cloudflare always serves over HTTPS
-    sameSite : 'lax',
-    path     : '/',
-    maxAge   : 60 * 60 * 24 * 7, // 7 days
-  });
-
-  return {};
 }
 
 export async function logout(): Promise<void> {
@@ -89,31 +88,15 @@ export async function logout(): Promise<void> {
   redirect('/login');
 }
 
-/**
- * Call this at the top of any Server Component or Server Action that must be
- * admin-only.  Redirects to /login if the session is absent or invalid.
- *
- * @example
- *   // src/app/assets/page.tsx
- *   import { checkAuth } from '@/actions/auth.actions';
- *   export default async function AssetsPage() {
- *     await checkAuth();
- *     ...
- *   }
- */
 export async function checkAuth(): Promise<void> {
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminPassword = getAdminPassword();
   const cookieStore   = await cookies();
   const session       = cookieStore.get(COOKIE_NAME)?.value;
 
-  if (!adminPassword || !session) {
-    redirect('/login');
-  }
+  if (!adminPassword || !session) redirect('/login');
 
   const expectedToken = await deriveSessionToken(adminPassword);
   const valid         = await safeCompare(session, expectedToken);
 
-  if (!valid) {
-    redirect('/login');
-  }
+  if (!valid) redirect('/login');
 }
