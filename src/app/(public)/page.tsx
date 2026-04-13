@@ -1,354 +1,444 @@
-// src/app/page.tsx
-// Trade Insight Daily — Public Landing Page
-// Mobile-First | Dark Mode | Glassmorphism | PWA-Ready
+// src/app/(public)/page.tsx
+// Trade Insight Daily — Redesigned Public Landing Page
+// Aesthetic: Precision Minimalism — Institutional, Trustworthy, Clean SaaS
+// Mobile-First | Dark Mode | Outfit Font | Zero Signal-Provider Elements
 
 import Link from "next/link";
 import {
-  TrendingUp,
-  BarChart2,
-  Bookmark,
-  Zap,
-  ArrowRight,
-MessageCircle,
-  Code,
-  Briefcase,
-  ChevronRight,
-  Activity,
+  LineChart,
+  BrainCircuit,
+  Calendar,
   Globe,
-  ShieldCheck,
-  Star,
+  ChevronDown,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  BookOpen,
+  Activity,
 } from "lucide-react";
 
-// ─── STATIC MOCK DATA ────────────────────────────────────────────────────────
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 
-const features = [
+type Direction = "Bullish" | "Bearish" | "Neutral";
+
+interface InsightCard {
+  category: string;
+  title: string;
+  summary: string;
+  direction: Direction;
+  timeAgo: string;
+  readMin: number;
+}
+
+interface CalendarEvent {
+  time: string;
+  currency: string;
+  event: string;
+  impact: "HIGH" | "MED";
+  humanSummary: string;
+  hasArticle: boolean;
+}
+
+// ─── STATIC DATA ─────────────────────────────────────────────────────────────
+
+const LANGUAGES = [
+  { code: "EN", label: "English" },
+  { code: "AR", label: "العربية" },
+  { code: "TR", label: "Türkçe" },
+  { code: "ID", label: "Bahasa" },
+  { code: "ES", label: "Español" },
+  { code: "PT", label: "Português" },
+  { code: "FR", label: "Français" },
+  { code: "DE", label: "Deutsch" },
+  { code: "RU", label: "Русский" },
+  { code: "ZH", label: "中文" },
+];
+
+const DAILY_ASSETS = [
+  "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD",
+  "NZD/USD", "EUR/GBP", "GBP/JPY", "EUR/JPY", "USD/CHF",
+  "BTC/USD", "ETH/USD", "XRP/USD",
+  "US500", "US100", "GER40",
+  "GOLD", "SILVER", "OIL", "NATGAS",
+];
+
+const FEATURES = [
   {
-    icon: TrendingUp,
-    title: "Daily Directional Bias",
-    description:
-      "Every trading day starts with a clear Bullish or Bearish bias across Crypto, Forex, and Stocks — no noise, just direction.",
-    accent: "from-cyan-500/20 to-cyan-600/5",
-    iconColor: "text-cyan-400",
-    border: "border-cyan-500/20",
+    icon: LineChart,
+    label: "Fundamental Bias",
+    headline: "Daily Intraday Bias",
+    body: "20 assets covered every trading day — 10 Forex pairs, 3 Crypto, 3 Indices, and 4 Commodities. Each bias is driven by live fundamental data, not lagging indicators.",
+    borderClass: "border-sky-500/30",
+    bgClass: "bg-sky-500/[0.04]",
+    iconClass: "text-sky-400 bg-sky-500/10",
+    tag: "20 Assets Daily",
+    tagClass: "text-sky-400 bg-sky-500/10 border-sky-500/25",
   },
   {
-    icon: BarChart2,
-    title: "Deep Market Analysis",
-    description:
-      "Multi-timeframe breakdowns, key support/resistance zones, and macro context that institutional traders rely on.",
-    accent: "from-emerald-500/20 to-emerald-600/5",
-    iconColor: "text-emerald-400",
-    border: "border-emerald-500/20",
+    icon: BrainCircuit,
+    label: "ICT Concepts",
+    headline: "ICT Concept Bias",
+    body: "3–5 high-probability directional biases daily, built strictly on Inner Circle Trader methodology — Fair Value Gaps, Order Blocks, Liquidity, and Market Structure Shifts.",
+    borderClass: "border-violet-500/30",
+    bgClass: "bg-violet-500/[0.04]",
+    iconClass: "text-violet-400 bg-violet-500/10",
+    tag: "3–5 Biases Daily",
+    tagClass: "text-violet-400 bg-violet-500/10 border-violet-500/25",
   },
   {
-    icon: Bookmark,
-    title: "Save & Filter Insights",
-    description:
-      "Bookmark your favorite analyses, filter by asset class, and build a personalized market intelligence library.",
-    accent: "from-violet-500/20 to-violet-600/5",
-    iconColor: "text-violet-400",
-    border: "border-violet-500/20",
+    icon: Calendar,
+    label: "Smart Calendar",
+    headline: "Filtered Economic Calendar",
+    body: "We cut the clutter. Only high-impact events, explained in plain English. A deep-dive analysis article is published 30 minutes before every major data release.",
+    borderClass: "border-emerald-500/30",
+    bgClass: "bg-emerald-500/[0.04]",
+    iconClass: "text-emerald-400 bg-emerald-500/10",
+    tag: "High-Impact Only",
+    tagClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
   },
   {
-    icon: Zap,
-    title: "Real-Time Precision",
-    description:
-      "Published before market open, our bias reports give you the edge when it matters — at the start of every session.",
-    accent: "from-amber-500/20 to-amber-600/5",
-    iconColor: "text-amber-400",
-    border: "border-amber-500/20",
+    icon: Globe,
+    label: "AI Translation",
+    headline: "Context-Aware AI Translation",
+    body: "Every page, every insight, translated natively across 10 languages. Not basic machine translation — our AI preserves financial context, terminology, and nuance.",
+    borderClass: "border-amber-500/30",
+    bgClass: "bg-amber-500/[0.04]",
+    iconClass: "text-amber-400 bg-amber-500/10",
+    tag: "10 Languages",
+    tagClass: "text-amber-400 bg-amber-500/10 border-amber-500/25",
   },
 ];
 
-const insights = [
+const INSIGHTS: InsightCard[] = [
   {
-    tag: "FOREX",
-    tagColor: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
-    title: "EUR/USD Daily Bias",
-    subtitle: "April 14, 2025",
-    bias: "Bullish",
-    biasColor: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+    category: "ICT Bias",
+    title: "EUR/USD — Daily ICT Directional Bias",
     summary:
-      "DXY weakness continuing into European session. Price holding above 1.0850 structure. Expecting a push toward 1.0920 resistance. Key invalidation below 1.0820.",
-    readTime: "3 min read",
+      "Buyside liquidity resting above 1.0920 draws price higher. Daily FVG at 1.0845–1.0862 acting as a propulsion zone. Bullish continuation bias aligned with weekly structure.",
+    direction: "Bullish",
+    timeAgo: "2h ago",
+    readMin: 4,
   },
   {
-    tag: "CRYPTO",
-    tagColor: "bg-violet-500/15 text-violet-400 border-violet-500/30",
-    title: "Bitcoin Weekly Analysis",
-    subtitle: "April 12, 2025",
-    bias: "Bearish",
-    biasColor: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+    category: "Fundamental Outlook",
+    title: "Gold — Weekly Fundamental Outlook",
     summary:
-      "BTC rejected at $72K supply zone after third attempt. Weekly candle forming bearish engulfing. Watch for retracement to $66,800 — $67,500 demand area.",
-    readTime: "5 min read",
+      "Softer USD and dovish Fed tone continue to support Gold's upward bias. Upcoming CPI release is the key risk event. Fundamental backdrop remains constructive for the metal.",
+    direction: "Bullish",
+    timeAgo: "5h ago",
+    readMin: 5,
   },
   {
-    tag: "STOCKS",
-    tagColor: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-    title: "S&P 500 Market Bias",
-    subtitle: "April 11, 2025",
-    bias: "Neutral",
-    biasColor: "text-zinc-300 bg-zinc-500/10 border-zinc-500/30",
+    category: "Fundamental Bias",
+    title: "GBP/USD — Intraday Fundamental Bias",
     summary:
-      "CPI data uncertainty ahead. SPX consolidating inside 5,180 – 5,230 range. Breakout direction will depend on Wednesday's inflation print. Patience is the edge.",
-    readTime: "4 min read",
+      "BoE's cautious stance and sticky UK inflation create a mixed fundamental picture. Dollar strength risk from upcoming NFP data limits clear directional conviction today.",
+    direction: "Neutral",
+    timeAgo: "7h ago",
+    readMin: 3,
   },
 ];
 
-const stats = [
-  { value: "2,400+", label: "Active Members" },
-  { value: "98%", label: "Accuracy Rate" },
-  { value: "180+", label: "Markets Covered" },
-  { value: "Daily", label: "Bias Reports" },
+const CALENDAR_EVENTS: CalendarEvent[] = [
+  {
+    time: "08:30 NY",
+    currency: "USD",
+    event: "CPI (MoM)",
+    impact: "HIGH",
+    humanSummary:
+      "Measures how much everyday prices changed last month. A hot number = stronger Dollar; a cool number = weaker Dollar.",
+    hasArticle: true,
+  },
+  {
+    time: "10:00 NY",
+    currency: "USD",
+    event: "ISM Services PMI",
+    impact: "HIGH",
+    humanSummary:
+      "A snapshot of US services industry health. Above 50 signals expansion — positive for the Dollar.",
+    hasArticle: false,
+  },
+  {
+    time: "12:30 NY",
+    currency: "GBP",
+    event: "BoE Governor Speech",
+    impact: "HIGH",
+    humanSummary:
+      "Hawkish hints about rate hikes will boost the Pound. Dovish language will weigh on GBP pairs.",
+    hasArticle: true,
+  },
 ];
 
-// ─── COMPONENTS ──────────────────────────────────────────────────────────────
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-/** Glowing dot grid background */
-function GridBackground() {
+function DirectionBadge({ direction }: { direction: Direction }) {
+  const map: Record<Direction, { icon: React.ElementType; cls: string }> = {
+    Bullish: {
+      icon: TrendingUp,
+      cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
+    },
+    Bearish: {
+      icon: TrendingDown,
+      cls: "text-rose-400 bg-rose-500/10 border-rose-500/25",
+    },
+    Neutral: {
+      icon: Minus,
+      cls: "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
+    },
+  };
+  const { icon: Icon, cls } = map[direction];
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* Dot grid */}
-      <div
-        className="absolute inset-0 opacity-20"
-        style={{
-          backgroundImage: `radial-gradient(circle, #3f3f46 1px, transparent 1px)`,
-          backgroundSize: "28px 28px",
-        }}
-      />
-      {/* Radial fade overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-zinc-950/60 to-zinc-950" />
-    </div>
+    <span
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold ${cls}`}
+    >
+      <Icon size={10} strokeWidth={2.5} />
+      {direction}
+    </span>
   );
 }
 
-/** Glowing orb accent */
-function GlowOrb({
-  className,
-  color = "cyan",
-}: {
-  className?: string;
-  color?: "cyan" | "emerald" | "violet";
-}) {
-  const colors = {
-    cyan: "bg-cyan-500/20",
-    emerald: "bg-emerald-500/15",
-    violet: "bg-violet-500/15",
-  };
+// Inject Outfit font at runtime.
+// For production, replace with next/font/google in layout.tsx.
+function OutfitFont() {
   return (
-    <div
-      className={`pointer-events-none absolute rounded-full blur-3xl ${colors[color]} ${className}`}
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `
+          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+          html { font-family: 'Outfit', sans-serif; }
+          @keyframes ticker {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+          }
+          .animate-ticker { animation: ticker 30s linear infinite; }
+        `,
+      }}
     />
   );
 }
 
-/** Navbar */
+// ─── SECTION: NAVBAR ─────────────────────────────────────────────────────────
+
 function Navbar() {
   return (
-    <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400">
-            <Activity size={16} className="text-zinc-950" strokeWidth={2.5} />
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-zinc-800/60 bg-zinc-950/90 backdrop-blur-md">
+      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
+        {/* ── Logo */}
+        <Link href="/" className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500">
+            <Activity size={14} className="text-white" strokeWidth={2.5} />
           </div>
-          <span
-            className="text-base font-bold tracking-tight text-white"
-            style={{ fontFamily: "'Syne', sans-serif" }}
-          >
-            Trade<span className="text-cyan-400">Insight</span>
-            <span className="ml-1 text-zinc-400">Daily</span>
+          <span className="text-sm font-semibold tracking-tight text-white">
+            Trade<span className="text-sky-400">Insight</span>{" "}
+            <span className="font-light text-zinc-500">Daily</span>
           </span>
         </Link>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3">
+        {/* ── Right controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Language Switcher — mock UI to showcase the AI translation feature */}
+          <div className="group relative hidden sm:block">
+            <button className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200">
+              <Globe size={12} />
+              EN
+              <ChevronDown size={11} className="text-zinc-600" />
+            </button>
+
+            {/* Dropdown revealed on hover — purely presentational */}
+            <div
+              className="pointer-events-none absolute right-0 top-full mt-1.5 w-36 origin-top-right scale-95 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 opacity-0 shadow-xl transition-all duration-150 group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100"
+            >
+              {LANGUAGES.map((l) => (
+                <button
+                  key={l.code}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+                >
+                  <span className="w-6 font-mono text-[10px] font-bold text-zinc-600">
+                    {l.code}
+                  </span>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <Link
             href="/admin/login"
-            className="hidden text-sm font-medium text-zinc-400 transition-colors hover:text-white sm:block"
+            className="text-xs font-medium text-zinc-500 transition-colors hover:text-white"
           >
             Sign In
           </Link>
+
           <Link
             href="/admin/login"
-            className="group flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 transition-all hover:shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+            className="rounded-lg bg-sky-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-400"
           >
             Join Free
-            <ChevronRight
+          </Link>
+        </div>
+      </nav>
+    </header>
+  );
+}
+
+// ─── SECTION: HERO ───────────────────────────────────────────────────────────
+
+function HeroSection() {
+  return (
+    <section className="relative flex flex-col items-center overflow-hidden px-4 pb-16 pt-32 sm:pb-24 sm:pt-40">
+      {/* Accent line at very top */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-500/40 to-transparent" />
+
+      {/* Minimal glow — subtle, not distracting */}
+      <div className="pointer-events-none absolute left-1/2 top-[30%] h-[480px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/[0.05] blur-3xl" />
+
+      <div className="relative z-10 mx-auto w-full max-w-2xl text-center">
+        {/* Live badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-sky-500/25 bg-sky-500/8 px-4 py-1.5 text-[11px] font-medium text-sky-400">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-sky-400" />
+          </span>
+          Published daily before market open
+        </div>
+
+        {/* Main headline — two-tone, minimal */}
+        <h1 className="mb-5 text-[2.2rem] font-bold leading-[1.15] tracking-tight text-white sm:text-5xl">
+          Institutional Market Bias
+          <br />
+          <span className="font-light text-zinc-500">
+            &amp; Fundamental Clarity
+          </span>
+        </h1>
+
+        {/* Subheadline */}
+        <p className="mx-auto mb-8 max-w-lg text-base font-light leading-relaxed text-zinc-400">
+          20 assets covered daily — Forex, Crypto, Indices &amp; Commodities.
+          Driven by fundamental data and ICT methodology. Built for traders who
+          want clear direction, not noise.
+        </p>
+
+        {/* CTA row */}
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <Link
+            href="/admin/login"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-sky-400 sm:w-auto"
+          >
+            Get Started — It's Free
+            <ArrowRight
               size={14}
               className="transition-transform group-hover:translate-x-0.5"
             />
           </Link>
+          <Link
+            href="#calendar"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/70 px-5 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white sm:w-auto"
+          >
+            <Calendar size={14} className="text-zinc-500" />
+            View Smart Calendar
+          </Link>
+        </div>
+
+        {/* Trust micro-row */}
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-zinc-600">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle size={11} className="text-emerald-500" />
+            No credit card required
+          </span>
+          <span className="flex items-center gap-1.5">
+            <CheckCircle size={11} className="text-emerald-500" />
+            No signals or trade recommendations
+          </span>
+          <span className="flex items-center gap-1.5">
+            <CheckCircle size={11} className="text-emerald-500" />
+            10 languages supported
+          </span>
         </div>
       </div>
-    </nav>
-  );
-}
 
-/** Hero Section */
-function HeroSection() {
-  return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 pt-24 pb-16">
-      <GridBackground />
-      <GlowOrb
-        className="left-1/4 top-1/4 h-96 w-96 -translate-x-1/2 -translate-y-1/2"
-        color="cyan"
-      />
-      <GlowOrb
-        className="bottom-1/4 right-1/4 h-80 w-80 translate-x-1/2 translate-y-1/2"
-        color="emerald"
-      />
-
-      <div className="relative z-10 mx-auto max-w-3xl text-center">
-        {/* Badge */}
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-300">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
-          </span>
-          Live Market Bias — Updated Daily Before Market Open
-        </div>
-
-        {/* Headline */}
-        <h1
-          className="mb-5 text-4xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-6xl"
-          style={{ fontFamily: "'Syne', sans-serif" }}
-        >
-          Navigate the Market{" "}
-          <span className="bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 bg-clip-text text-transparent">
-            with Clear Daily Bias
-          </span>
-        </h1>
-
-        {/* Sub-headline */}
-        <p className="mx-auto mb-8 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-          Professional directional insights for Crypto, Forex & Stocks — every
-          morning. No signals, no guesswork. Pure market bias and deep analysis
-          designed for serious traders.
+      {/* ── Asset Ticker Strip */}
+      <div className="relative z-10 mt-14 w-full">
+        <p className="mb-3 text-center text-[10px] font-semibold uppercase tracking-widest text-zinc-700">
+          20 Assets Covered Daily
         </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <Link
-            href="/admin/login"
-            className="group flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 px-6 py-3.5 text-sm font-bold text-zinc-950 shadow-[0_0_30px_rgba(34,211,238,0.25)] transition-all hover:shadow-[0_0_40px_rgba(34,211,238,0.45)] sm:w-auto"
-          >
-            Get Started — It's Free
-            <ArrowRight
-              size={16}
-              className="transition-transform group-hover:translate-x-0.5"
-            />
-          </Link>
-          <Link
-            href="#insights"
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur transition-all hover:border-white/20 hover:bg-white/10 sm:w-auto"
-          >
-            Explore Free Insights
-          </Link>
-        </div>
+        {/* Edge fade masks */}
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-zinc-950 to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-zinc-950 to-transparent" />
 
-        {/* Social proof mini-row */}
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-500">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck size={13} className="text-emerald-400" />
-            No credit card required
-          </div>
-          <div className="h-3 w-px bg-zinc-700" />
-          <div className="flex items-center gap-1.5">
-            <Star size={13} className="text-amber-400" />
-            Trusted by 2,400+ traders
-          </div>
-          <div className="h-3 w-px bg-zinc-700" />
-          <div className="flex items-center gap-1.5">
-            <Globe size={13} className="text-cyan-400" />
-            180+ markets covered
-          </div>
-        </div>
-      </div>
-
-      {/* Hero bottom fade */}
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-zinc-950 to-transparent" />
-    </section>
-  );
-}
-
-/** Stats Bar */
-function StatsBar() {
-  return (
-    <section className="relative border-y border-white/5 bg-white/[0.02]">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          {stats.map((s) => (
-            <div key={s.label} className="text-center">
-              <p
-                className="text-2xl font-extrabold text-white sm:text-3xl"
-                style={{ fontFamily: "'Syne', sans-serif" }}
+        <div className="flex overflow-hidden border-y border-zinc-800/50 bg-zinc-900/20">
+          {/* Duplicate list for seamless loop */}
+          <div className="animate-ticker flex shrink-0 items-center">
+            {[...DAILY_ASSETS, ...DAILY_ASSETS].map((asset, i) => (
+              <span
+                key={`${asset}-${i}`}
+                className="flex items-center whitespace-nowrap px-5 py-3 text-xs font-medium text-zinc-600"
               >
-                <span className="bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-                  {s.value}
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">{s.label}</p>
-            </div>
-          ))}
+                {asset}
+                <span className="ml-5 h-3 w-px bg-zinc-800" />
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-/** Features Section */
+// ─── SECTION: FEATURES ───────────────────────────────────────────────────────
+
 function FeaturesSection() {
   return (
-    <section className="relative overflow-hidden px-4 py-20 sm:px-6" id="features">
-      <GlowOrb
-        className="right-0 top-1/2 h-64 w-64 translate-x-1/2 -translate-y-1/2"
-        color="violet"
-      />
-      <div className="relative mx-auto max-w-5xl">
+    <section className="px-4 py-16 sm:px-6 sm:py-20" id="features">
+      <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="mb-12 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Why Trade Insight Daily
+        <div className="mb-10 sm:mb-12">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-sky-400">
+            Platform Features
           </p>
-          <h2
-            className="text-3xl font-extrabold text-white sm:text-4xl"
-            style={{ fontFamily: "'Syne', sans-serif" }}
-          >
-            Everything You Need to Trade{" "}
-            <span className="text-zinc-400">With Conviction</span>
+          <h2 className="text-2xl font-bold text-white sm:text-3xl">
+            Four pillars of edge.{" "}
+            <span className="font-light text-zinc-500">One platform.</span>
           </h2>
         </div>
 
-        {/* Cards Grid */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          {features.map((f) => {
-            const Icon = f.icon;
+        {/* 2×2 grid — collapses to 1-col on mobile */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {FEATURES.map((feat) => {
+            const Icon = feat.icon;
             return (
               <div
-                key={f.title}
-                className={`group relative overflow-hidden rounded-2xl border ${f.border} bg-gradient-to-br ${f.accent} p-6 backdrop-blur transition-all hover:-translate-y-1 hover:shadow-[0_8px_40px_rgba(0,0,0,0.4)]`}
+                key={feat.label}
+                className={`group relative overflow-hidden rounded-2xl border p-6 transition-all duration-200 hover:-translate-y-0.5 ${feat.borderClass} ${feat.bgClass}`}
               >
-                {/* Icon */}
-                <div
-                  className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900/80 ${f.iconColor}`}
-                >
-                  <Icon size={20} />
-                </div>
-                <h3 className="mb-2 text-base font-bold text-white">
-                  {f.title}
-                </h3>
-                <p className="text-sm leading-relaxed text-zinc-400">
-                  {f.description}
-                </p>
-
-                {/* Subtle corner gradient */}
-                <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 opacity-0 transition-opacity group-hover:opacity-100">
+                {/* Top row: icon + tag pill */}
+                <div className="mb-5 flex items-start justify-between gap-3">
                   <div
-                    className={`h-full w-full rounded-bl-full bg-gradient-to-bl ${f.accent} blur-xl`}
-                  />
+                    className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${feat.iconClass}`}
+                  >
+                    <Icon size={17} strokeWidth={1.8} />
+                  </div>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${feat.tagClass}`}
+                  >
+                    {feat.tag}
+                  </span>
                 </div>
+
+                {/* Text */}
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+                  {feat.label}
+                </p>
+                <h3 className="mb-2.5 text-base font-semibold text-white">
+                  {feat.headline}
+                </h3>
+                <p className="text-sm font-light leading-relaxed text-zinc-500">
+                  {feat.body}
+                </p>
               </div>
             );
           })}
@@ -358,261 +448,234 @@ function FeaturesSection() {
   );
 }
 
-/** Dashboard Preview / Sneak Peek — Bento Grid */
-function DashboardPreview() {
+// ─── SECTION: SMART CALENDAR PREVIEW ─────────────────────────────────────────
+
+function CalendarPreview() {
   return (
-    <section className="relative overflow-hidden px-4 py-20 sm:px-6" id="preview">
-      <GlowOrb
-        className="left-0 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2"
-        color="cyan"
-      />
+    <section
+      className="relative overflow-hidden px-4 py-16 sm:px-6 sm:py-20"
+      id="calendar"
+    >
+      {/* Background glow */}
+      <div className="pointer-events-none absolute right-0 top-1/2 h-72 w-72 -translate-y-1/2 translate-x-1/2 rounded-full bg-emerald-500/[0.05] blur-3xl" />
 
       <div className="relative mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-12 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Platform Preview
-          </p>
-          <h2
-            className="text-3xl font-extrabold text-white sm:text-4xl"
-            style={{ fontFamily: "'Syne', sans-serif" }}
+        {/* Header row */}
+        <div className="mb-10 sm:flex sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-emerald-400">
+              Smart Economic Calendar
+            </p>
+            <h2 className="text-2xl font-bold text-white sm:text-3xl">
+              High-impact events only.{" "}
+              <span className="font-light text-zinc-500">
+                Explained in plain English.
+              </span>
+            </h2>
+          </div>
+          <Link
+            href="/admin/login"
+            className="mt-4 hidden items-center gap-1.5 text-xs font-medium text-sky-400 transition hover:text-sky-300 sm:flex"
           >
-            Your Personal{" "}
-            <span className="bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-              Market Intelligence Hub
-            </span>
-          </h2>
+            Open Full Calendar <ArrowRight size={13} />
+          </Link>
         </div>
 
-        {/* Bento Grid */}
-        <div className="grid auto-rows-auto gap-3 sm:grid-cols-12">
-          {/* Main Bias Card — col 1-7 */}
-          <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-zinc-900/50 p-5 backdrop-blur sm:col-span-7">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-zinc-500">
-                  Today's Market Bias
-                </p>
-                <p
-                  className="text-xl font-extrabold text-white"
-                  style={{ fontFamily: "'Syne', sans-serif" }}
-                >
-                  EUR/USD
-                </p>
-              </div>
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-sm font-bold text-emerald-400">
-                ▲ Bullish
+        {/* Calendar UI mockup */}
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 backdrop-blur">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <Calendar size={13} className="text-emerald-400" />
+              <span className="text-xs font-semibold text-white">
+                Economic Calendar
+              </span>
+              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                High Impact Only
               </span>
             </div>
+            <span className="text-[10px] text-zinc-700">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          </div>
 
-            {/* Fake chart bars */}
-            <div className="flex items-end gap-1.5 rounded-xl bg-zinc-900/60 p-4">
-              {[40, 55, 45, 60, 52, 70, 65, 80, 72, 88, 78, 92].map(
-                (h, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 rounded-t transition-all"
-                    style={{
-                      height: `${h}px`,
-                      background:
-                        h > 70
-                          ? "linear-gradient(to top, #10b981, #34d399)"
-                          : "linear-gradient(to top, #064e3b, #065f46)",
-                    }}
-                  />
-                )
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {[
-                { label: "Entry Zone", val: "1.0842" },
-                { label: "Target", val: "1.0920" },
-                { label: "Invalidation", val: "1.0815" },
-              ].map((x) => (
-                <div
-                  key={x.label}
-                  className="rounded-lg bg-zinc-900/70 p-2 text-center"
+          {/* Table header */}
+          <div className="grid grid-cols-[68px_50px_1fr_78px] border-b border-zinc-800/40 px-4 py-2 sm:grid-cols-[80px_60px_1fr_90px]">
+            {["Time", "Ccy", "Event & Plain-English Analysis", "Impact"].map(
+              (h) => (
+                <span
+                  key={h}
+                  className="text-[9px] font-semibold uppercase tracking-widest text-zinc-700"
                 >
-                  <p className="text-[10px] text-zinc-500">{x.label}</p>
-                  <p className="text-sm font-bold text-white">{x.val}</p>
-                </div>
-              ))}
-            </div>
+                  {h}
+                </span>
+              )
+            )}
           </div>
 
-          {/* Right column stacked — col 8-12 */}
-          <div className="flex flex-col gap-3 sm:col-span-5">
-            {/* Active Markets */}
-            <div className="rounded-2xl border border-white/5 bg-zinc-900/50 p-4 backdrop-blur">
-              <p className="mb-3 text-xs font-semibold text-zinc-400">
-                Active Markets
-              </p>
-              <div className="space-y-2">
-                {[
-                  { pair: "BTC/USD", bias: "▼ Bearish", color: "text-rose-400", bg: "bg-rose-500/10", pct: "-2.1%" },
-                  { pair: "GBP/USD", bias: "▲ Bullish", color: "text-emerald-400", bg: "bg-emerald-500/10", pct: "+0.8%" },
-                  { pair: "GOLD", bias: "▲ Bullish", color: "text-amber-400", bg: "bg-amber-500/10", pct: "+1.3%" },
-                ].map((m) => (
-                  <div
-                    key={m.pair}
-                    className="flex items-center justify-between rounded-lg bg-zinc-800/40 px-3 py-2"
-                  >
-                    <p className="text-sm font-semibold text-white">{m.pair}</p>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${m.bg} ${m.color}`}
-                      >
-                        {m.bias}
-                      </span>
-                      <span className={`text-xs font-medium ${m.color}`}>
-                        {m.pct}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Saved + Session */}
-            <div className="grid grid-cols-2 gap-3 flex-1">
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4">
-                <Bookmark size={20} className="mb-2 text-violet-400" />
-                <p className="text-2xl font-extrabold text-white">12</p>
-                <p className="text-center text-[10px] text-zinc-500">
-                  Saved Insights
-                </p>
-              </div>
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4">
-                <Activity size={20} className="mb-2 text-cyan-400" />
-                <p className="text-2xl font-extrabold text-white">NY</p>
-                <p className="text-center text-[10px] text-zinc-500">
-                  Session Open
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom wide bar — quick insight teaser */}
-          <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/40 p-5 backdrop-blur sm:col-span-12">
-            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs text-zinc-500">Latest Insight</p>
-                <p className="text-base font-bold text-white">
-                  DXY Weakness + Fed Pause = Risk-On Environment
-                </p>
-                <p className="mt-1 text-sm text-zinc-400">
-                  A deep macro look at why dollar weakness is fueling commodity
-                  and EM currency strength this week.
-                </p>
-              </div>
-              <Link
-                href="/admin/login"
-                className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/5"
+          {/* Event rows */}
+          <div className="divide-y divide-zinc-800/40">
+            {CALENDAR_EVENTS.map((ev, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-[68px_50px_1fr_78px] items-start gap-0 px-4 py-4 transition-colors hover:bg-zinc-800/25 sm:grid-cols-[80px_60px_1fr_90px]"
               >
-                Read Full Report <ArrowRight size={14} />
-              </Link>
-            </div>
+                {/* Time */}
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <Clock size={9} className="shrink-0 text-zinc-700" />
+                  <span className="text-[11px] font-medium tabular-nums text-zinc-400">
+                    {ev.time}
+                  </span>
+                </div>
+
+                {/* Currency */}
+                <div className="pt-0.5">
+                  <span className="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300">
+                    {ev.currency}
+                  </span>
+                </div>
+
+                {/* Event + explanation */}
+                <div className="pr-4">
+                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-white">
+                      {ev.event}
+                    </span>
+                    {ev.hasArticle && (
+                      <span className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[9px] font-semibold text-sky-400">
+                        <BookOpen size={8} />
+                        Analysis 30 min before
+                      </span>
+                    )}
+                  </div>
+                  {/* Human-readable explanation — the key differentiator */}
+                  <p className="text-[11px] font-light leading-relaxed text-zinc-500">
+                    {ev.humanSummary}
+                  </p>
+                </div>
+
+                {/* Impact badge */}
+                <div className="flex items-start justify-end pt-0.5">
+                  {ev.impact === "HIGH" ? (
+                    <span className="flex items-center gap-1 rounded-md border border-rose-500/25 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">
+                      <AlertTriangle size={9} />
+                      HIGH
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                      MED
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom note */}
+          <div className="flex items-center gap-2 border-t border-zinc-800 bg-zinc-900/50 px-4 py-3">
+            <CheckCircle size={11} className="shrink-0 text-emerald-400" />
+            <p className="text-[10px] text-zinc-600">
+              Low and medium-impact events are filtered out automatically. Only
+              events that genuinely move markets are shown.
+            </p>
           </div>
         </div>
 
-        {/* Frosted overlay on bottom hinting locked content */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex h-20 items-end justify-center bg-gradient-to-t from-zinc-950 to-transparent">
-          <p className="mb-2 text-xs text-zinc-600">
-            Sign in to unlock full dashboard access
-          </p>
+        {/* Mobile link */}
+        <div className="mt-5 text-center sm:hidden">
+          <Link
+            href="/admin/login"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-400"
+          >
+            Open Full Calendar <ArrowRight size={13} />
+          </Link>
         </div>
       </div>
     </section>
   );
 }
 
-/** Recent Free Insights Section */
+// ─── SECTION: RECENT INSIGHTS ────────────────────────────────────────────────
+
 function InsightsSection() {
   return (
-    <section
-      className="relative overflow-hidden px-4 py-20 sm:px-6"
-      id="insights"
-    >
-      <GlowOrb
-        className="right-1/3 bottom-0 h-64 w-64 translate-y-1/2"
-        color="emerald"
-      />
-
-      <div className="relative mx-auto max-w-5xl">
+    <section className="px-4 py-16 sm:px-6 sm:py-20" id="insights">
+      <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="mb-3 text-center">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-            Free Insights
-          </p>
-          <h2
-            className="text-3xl font-extrabold text-white sm:text-4xl"
-            style={{ fontFamily: "'Syne', sans-serif" }}
+        <div className="mb-10 sm:flex sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-sky-400">
+              Recent Insights
+            </p>
+            <h2 className="text-2xl font-bold text-white sm:text-3xl">
+              What we publish{" "}
+              <span className="font-light text-zinc-500">every day.</span>
+            </h2>
+          </div>
+          <Link
+            href="/admin/login"
+            className="mt-4 hidden items-center gap-1.5 text-xs font-medium text-sky-400 transition hover:text-sky-300 sm:flex"
           >
-            See What We Publish{" "}
-            <span className="text-zinc-400">Every Day</span>
-          </h2>
-          <p className="mx-auto mt-3 max-w-lg text-sm text-zinc-500">
-            A sample of our daily bias reports. Members get access to every
-            insight, saved history, and priority updates.
-          </p>
+            Browse All Insights <ArrowRight size={13} />
+          </Link>
         </div>
 
-        {/* Insight Cards */}
-        <div className="mt-10 grid gap-4 sm:grid-cols-3">
-          {insights.map((ins) => (
-            <div
+        {/* Cards */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {INSIGHTS.map((ins) => (
+            <article
               key={ins.title}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/50 backdrop-blur transition-all hover:-translate-y-1 hover:border-white/10 hover:shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+              className="group flex flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900/80"
             >
-              {/* Card Header */}
-              <div className="flex items-center justify-between border-b border-white/5 px-4 pt-4 pb-3">
-                <span
-                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ins.tagColor}`}
-                >
-                  {ins.tag}
+              {/* Card header: category + direction */}
+              <div className="flex items-center justify-between border-b border-zinc-800/60 px-4 py-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-600">
+                  {ins.category}
                 </span>
-                <span className="text-[10px] text-zinc-600">{ins.subtitle}</span>
+                <DirectionBadge direction={ins.direction} />
               </div>
 
-              {/* Card Body */}
+              {/* Card body */}
               <div className="flex flex-1 flex-col p-4">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <h3 className="text-base font-bold leading-snug text-white">
-                    {ins.title}
-                  </h3>
-                  <span
-                    className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-bold ${ins.biasColor}`}
-                  >
-                    {ins.bias}
-                  </span>
-                </div>
-                <p className="flex-1 text-sm leading-relaxed text-zinc-400">
+                <h3 className="mb-2.5 text-sm font-semibold leading-snug text-white">
+                  {ins.title}
+                </h3>
+                <p className="flex-1 text-xs font-light leading-relaxed text-zinc-500">
                   {ins.summary}
                 </p>
               </div>
 
-              {/* Card Footer */}
-              <div className="flex items-center justify-between border-t border-white/5 px-4 py-3">
-                <span className="text-xs text-zinc-600">{ins.readTime}</span>
+              {/* Card footer */}
+              <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
+                <div className="flex items-center gap-2 text-[10px] text-zinc-700">
+                  <Clock size={9} />
+                  <span>{ins.timeAgo}</span>
+                  <span>·</span>
+                  <span>{ins.readMin} min read</span>
+                </div>
                 <Link
                   href="/admin/login"
-                  className="flex items-center gap-1 text-xs font-medium text-cyan-400 transition-all hover:gap-2"
+                  className="flex items-center gap-1 text-[11px] font-medium text-sky-400 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100"
                 >
-                  Read Full <ArrowRight size={12} />
+                  Read <ArrowRight size={10} />
                 </Link>
               </div>
-            </div>
+            </article>
           ))}
         </div>
 
-        {/* View All CTA */}
-        <div className="mt-8 text-center">
+        {/* Mobile link */}
+        <div className="mt-6 text-center sm:hidden">
           <Link
             href="/admin/login"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-400"
           >
-            View All Insights <ArrowRight size={14} />
+            Browse All Insights <ArrowRight size={13} />
           </Link>
         </div>
       </div>
@@ -620,131 +683,121 @@ function InsightsSection() {
   );
 }
 
-/** CTA Section */
-function CTASection() {
-  return (
-    <section className="relative overflow-hidden px-4 py-20 sm:px-6">
-      <div className="relative mx-auto max-w-3xl overflow-hidden rounded-3xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-zinc-900/80 to-emerald-500/10 p-8 text-center backdrop-blur sm:p-12">
-        {/* Glow inside card */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
-          <div className="absolute left-1/2 top-0 h-48 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/20 blur-3xl" />
-        </div>
+// ─── SECTION: CTA BANNER ─────────────────────────────────────────────────────
 
-        <p className="relative mb-3 text-xs font-semibold uppercase tracking-widest text-cyan-400">
-          Start Today — No Card Needed
-        </p>
-        <h2
-          className="relative mb-4 text-3xl font-extrabold text-white sm:text-4xl"
-          style={{ fontFamily: "'Syne', sans-serif" }}
-        >
-          Stop Trading Blind.
-          <br />
-          <span className="bg-gradient-to-r from-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-            Trade With Daily Clarity.
-          </span>
-        </h2>
-        <p className="relative mx-auto mb-8 max-w-md text-sm text-zinc-400">
-          Join thousands of traders who start their trading day with a clear
-          bias, structured analysis, and zero noise.
-        </p>
-        <Link
-          href="/admin/login"
-          className="relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 px-8 py-3.5 text-sm font-bold text-zinc-950 shadow-[0_0_30px_rgba(34,211,238,0.3)] transition-all hover:shadow-[0_0_50px_rgba(34,211,238,0.5)]"
-        >
-          Create Your Free Account
-          <ArrowRight size={16} />
-        </Link>
+function CTABanner() {
+  return (
+    <section className="px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-5xl">
+        <div className="relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50 px-6 py-10 text-center sm:px-12">
+          {/* Top accent line */}
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-500/50 to-transparent" />
+
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-sky-400">
+            Start Today
+          </p>
+          <h2 className="mb-3 text-2xl font-bold text-white sm:text-3xl">
+            Clarity before every session.
+          </h2>
+          <p className="mx-auto mb-7 max-w-md text-sm font-light text-zinc-500">
+            Join traders who read our daily bias report before the market opens
+            — fundamental context, ICT structure, and a filtered calendar. Free
+            to start.
+          </p>
+          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              href="/admin/login"
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-400 sm:w-auto"
+            >
+              Create Free Account
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-0.5"
+              />
+            </Link>
+            <p className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <CheckCircle size={11} className="text-emerald-500" />
+              No credit card · No signals · No noise
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-/** Footer */
+// ─── SECTION: FOOTER ─────────────────────────────────────────────────────────
+
 function Footer() {
+  const year = new Date().getFullYear();
   return (
-    <footer className="border-t border-white/5 px-4 py-10 sm:px-6">
+    <footer className="border-t border-zinc-800/60 px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400">
-              <Activity size={13} className="text-zinc-950" strokeWidth={2.5} />
+          <Link href="/" className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500">
+              <Activity size={12} className="text-white" strokeWidth={2.5} />
             </div>
-            <span
-              className="text-sm font-bold text-white"
-              style={{ fontFamily: "'Syne', sans-serif" }}
-            >
-              Trade<span className="text-cyan-400">Insight</span>
-              <span className="text-zinc-400"> Daily</span>
+            <span className="text-xs font-semibold text-white">
+              Trade<span className="text-sky-400">Insight</span>{" "}
+              <span className="font-light text-zinc-600">Daily</span>
             </span>
           </Link>
 
           {/* Links */}
-          <div className="flex items-center gap-6 text-xs text-zinc-500">
-            <Link href="#features" className="hover:text-white transition-colors">Features</Link>
-            <Link href="#insights" className="hover:text-white transition-colors">Insights</Link>
-            <Link href="/admin/login" className="hover:text-white transition-colors">Login</Link>
-            <Link href="#" className="hover:text-white transition-colors">Privacy</Link>
-          </div>
-
-          {/* Socials */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-zinc-600">
             {[
-              { icon: MessageCircle, href: "#" },
-              { icon: Code, href: "#" },
-              { icon: Briefcase, href: "#" },
-            ].map(({ icon: Icon, href }) => (
+              { label: "Features", href: "#features" },
+              { label: "Calendar", href: "#calendar" },
+              { label: "Insights", href: "#insights" },
+              { label: "Sign In", href: "/admin/login" },
+              { label: "Privacy Policy", href: "#" },
+            ].map((l) => (
               <Link
-                key={href + Icon.displayName}
-                href={href}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-zinc-500 transition-all hover:border-white/20 hover:text-white"
+                key={l.label}
+                href={l.href}
+                className="transition-colors hover:text-zinc-300"
               >
-                <Icon size={14} />
+                {l.label}
               </Link>
             ))}
           </div>
+
+          {/* Languages note */}
+          <div className="flex items-center gap-1.5">
+            <Globe size={11} className="text-zinc-700" />
+            <span className="text-[10px] text-zinc-700">
+              Available in 10 languages
+            </span>
+          </div>
         </div>
 
-        <div className="mt-6 border-t border-white/5 pt-6 text-center text-xs text-zinc-600">
-          © {new Date().getFullYear()} Trade Insight Daily. All rights reserved.
-          Market bias is for educational purposes only. Not financial advice.
+        {/* Disclaimer */}
+        <div className="mt-6 border-t border-zinc-800/60 pt-6 text-center text-[10px] leading-relaxed text-zinc-700">
+          © {year} Trade Insight Daily. All content is for educational and
+          informational purposes only. We do not provide financial advice,
+          trading signals, or investment recommendations of any kind.
         </div>
       </div>
     </footer>
   );
 }
 
-// ─── FONT LOADER (Syne via Google Fonts inline) ───────────────────────────────
-// Add this to your <head> via layout.tsx, or use next/font.
-// For self-contained convenience, we inject it here via a style tag.
-function SyneFontLoader() {
-  return (
-    <style
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{
-        __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap');
-      `,
-      }}
-    />
-  );
-}
-
-// ─── PAGE ─────────────────────────────────────────────────────────────────────
+// ─── PAGE ROOT ────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
   return (
     <>
-      <SyneFontLoader />
-      <div className="min-h-screen bg-zinc-950 text-white antialiased">
+      <OutfitFont />
+      <div className="min-h-screen bg-zinc-950 text-white antialiased selection:bg-sky-500/30 selection:text-sky-200">
         <Navbar />
         <main>
           <HeroSection />
-          <StatsBar />
           <FeaturesSection />
-          <DashboardPreview />
+          <CalendarPreview />
           <InsightsSection />
-          <CTASection />
+          <CTABanner />
         </main>
         <Footer />
       </div>
