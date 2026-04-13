@@ -19,16 +19,18 @@ async function deriveSessionToken(password: string): Promise<string> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // নিচের লিস্টে থাকা পাথগুলোতে পাসওয়ার্ড লাগবে না
   if (
+    pathname === '/' ||                // হোমপেজকে মুক্ত করা হলো
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.startsWith('/blog')
+    pathname.startsWith('/blog') ||
+    pathname.startsWith('/api')        // API রুটগুলোকেও সাধারণত বাইরে রাখা হয়
   ) {
     return NextResponse.next();
   }
 
-  // Cloudflare Pages-এ Dashboard env variable → process.env-এ আসে
   const adminPassword = process.env.ADMIN_PASSWORD;
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value;
 
@@ -49,8 +51,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // শুধুমাত্র এই এরিয়াগুলোতে পাসওয়ার্ড কাজ করবে
     '/assets/:path*',
     '/posts/:path*',
-    '/((?!login|_next|favicon|blog).*)',
+    '/admin/:path*',
   ],
 };
