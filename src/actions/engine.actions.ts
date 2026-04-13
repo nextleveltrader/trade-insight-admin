@@ -3,7 +3,15 @@
 /**
  * src/actions/engine.actions.ts
  *
- * Core AI execution engine. Runs a full prompt chain for a given asset.
+ * Core AI execution engine. Runs a full prompt chain for a given asset:
+ *   1. Fetches all prompt steps ordered by `order` ASC.
+ *   2. Resolves {{step_X_output}} placeholders using prior step outputs.
+ *   3. Calls the appropriate AI API for each step.
+ *   4. Routes the output: stores it for the next step, saves a blog draft,
+ *      or logs it for Telegram (to be wired up later).
+ *
+ * API keys are read from Cloudflare Secrets via getRequestContext().env —
+ * they are never exposed to the client.
  */
 
 import { asc, eq }          from 'drizzle-orm';
@@ -22,85 +30,7 @@ type CloudflareEnv = {
   PERPLEXITY_API_KEY:  string;
 };
 
-// ─── Model tier types ─────────────────────────────────────────────────────────
-
-export type ModelTier = 'minimum' | 'medium' | 'maximum';
-
-// ─── Dynamic model version map ────────────────────────────────────────────────
-
-const MODEL_VERSION_MAP: Record<string, Record<ModelTier, string>> = {
-  claude: {
-    minimum: 'claude-3-haiku-20240307',       // fastest / cheapest Haiku
-    medium:  'claude-3-5-sonnet-latest',       // Anthropic dynamic alias
-    maximum: 'claude-3-opus-latest',           // Anthropic dynamic alias
-  },
-  chatgpt: {
-    minimum: 'gpt-4o-mini',                   // small, cheap, fast
-    medium:  'gpt-4o',                         // stable 4o release
-    maximum: 'chatgpt-4o-latest',              // OpenAI continually-updated alias
-  },
-  gemini: {
-    minimum: 'gemini-1.5-flash-8b',        // Google's fastest free model
-    medium:  'gemini-1.5-flash',           // Balanced model
-    maximum: 'gemini-1.5-pro',             // Pro model without -latest
-  },
-  perplexity: {
-    minimum: 'llama-3-sonar-small-32k-online',
-    medium:  'llama-3-sonar-large-32k-online',
-    maximum: 'llama-3-sonar-huge-32k-online',
-  },
-};
-
-// ─── Gemini aggressive fallback list ─────────────────────────────────────────
-
-const GEMINI_FALLBACK_MODELS: readonly string[] = [
-  'gemini-1.5-flash',   
-  'gemini-1.5-flash-8b', 
-  'gemini-1.5-pro',     
-  'gemini-1.0-pro',         
-];
-
-// ─── Model version resolver ───────────────────────────────────────────────────
-
-// Removed 'export' from here to fix the Next.js build error
-function getActualModelVersion(provider: string, tier: string): string {
-  const providerMap = MODEL_VERSION_MAP[provider];
-  if (!providerMap) {
-    console.warn(`[Engine] Unknown provider "${provider}" — falling back to claude/medium`);
-    return MODEL_VERSION_MAP['claude']['medium'];
-  }
-  const safeTier = (['minimum', 'medium', 'maximum'] as const).includes(tier as ModelTier)
-    ? (tier as ModelTier)
-    : 'medium';
-  return providerMap[safeTier];
-}
-
-function getFallbackTiers(tier: string): ModelTier[] {
-  switch (tier as ModelTier) {
-    case 'maximum': return ['medium', 'minimum'];
-    case 'medium':  return ['minimum'];
-    case 'minimum': return [];           
-    default:        return ['minimum'];
-  }
-}
-
-function isModelUnavailableError(status: number, body: string): boolean {
-  if (status === 404) return true;                         
-  if (status === 529) return true;                         
-  if (status === 503) return true;                         
-  const lower = body.toLowerCase();
-  return (
-    lower.includes('model_not_found') ||
-    lower.includes('model not found') ||
-    lower.includes('no such model') ||
-    lower.includes('does not exist') ||
-    lower.includes('deprecated') ||
-    lower.includes('not available') ||
-    lower.includes('overloaded')
-  );
-}
-
-// ─── Public return type ───────────────────────────────────────────────────────
+// ─── Public return type (consumed by the client) ──────────────────────────────
 
 export type ChainRunResult = {
   success:      boolean;
@@ -108,12 +38,18 @@ export type ChainRunResult = {
   totalSteps:   number;
   postsCreated: number;
   error?:       string;
-  failedStep?:  number;        
-  failedModel?: string;        
+  failedStep?:  number;        // order number of the step that threw
+  failedModel?: string;        // which AI model failed
 };
 
 // ─── Placeholder resolver ─────────────────────────────────────────────────────
 
+/**
+ * Replaces every {{step_N_output}} token in `content` with the recorded
+ * output of step N. If step N has not run yet, the token is replaced with a
+ * clear fallback so the downstream AI prompt does not silently receive a raw
+ * template literal.
+ */
 function resolvePlaceholders(
   content:     string,
   stepOutputs: Record<number, string>,
@@ -126,11 +62,7 @@ function resolvePlaceholders(
 
 // ─── AI caller functions ──────────────────────────────────────────────────────
 
-async function callClaude(
-  apiKey:       string,
-  modelVersion: string,
-  prompt:       string,
-): Promise<{ text: string; status: number; rawBody: string }> {
+async function callClaude(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method:  'POST',
     headers: {
@@ -139,28 +71,26 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model:      modelVersion,
+      model:      'claude-sonnet-4-6',
       max_tokens: 4096,
       messages:   [{ role: 'user', content: prompt }],
     }),
   });
 
-  const rawBody = await res.text();
-  if (!res.ok) return { text: '', status: res.status, rawBody };
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Anthropic ${res.status}: ${body}`);
+  }
 
-  const data = JSON.parse(rawBody) as {
+  const data = await res.json() as {
     content: Array<{ type: string; text: string }>;
   };
-  const text = data.content.find((b) => b.type === 'text')?.text ?? '';
+  const text = data.content.find((b) => b.type === 'text')?.text;
   if (!text) throw new Error('Anthropic returned an empty response.');
-  return { text, status: res.status, rawBody };
+  return text;
 }
 
-async function callChatGPT(
-  apiKey:       string,
-  modelVersion: string,
-  prompt:       string,
-): Promise<{ text: string; status: number; rawBody: string }> {
+async function callChatGPT(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method:  'POST',
     headers: {
@@ -168,55 +98,50 @@ async function callChatGPT(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model:    modelVersion,
+      model:    'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 
-  const rawBody = await res.text();
-  if (!res.ok) return { text: '', status: res.status, rawBody };
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenAI ${res.status}: ${body}`);
+  }
 
-  const data = JSON.parse(rawBody) as {
+  const data = await res.json() as {
     choices: Array<{ message: { content: string } }>;
   };
-  const text = data.choices[0]?.message?.content ?? '';
+  const text = data.choices[0]?.message?.content;
   if (!text) throw new Error('OpenAI returned an empty response.');
-  return { text, status: res.status, rawBody };
+  return text;
 }
 
-async function callGemini(
-  apiKey:       string,
-  modelVersion: string,
-  prompt:       string,
-): Promise<{ text: string; status: number; rawBody: string }> {
-  // Trim spaces and use stable v1 API
-  const cleanModel = modelVersion.trim(); 
-  const url = `https://generativelanguage.googleapis.com/v1/models/${cleanModel}:generateContent?key=${apiKey}`;
+async function callGemini(apiKey: string, prompt: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
 
   const res = await fetch(url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      // Safe token limit for older models
-      generationConfig: { maxOutputTokens: 2048 }, 
+      generationConfig: { maxOutputTokens: 4096 },
     }),
   });
 
-  const rawBody = await res.text();
-  if (!res.ok) return { text: '', status: res.status, rawBody };
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gemini ${res.status}: ${body}`);
+  }
 
-  const data = JSON.parse(rawBody) as any;
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const data = await res.json() as {
+    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
+  };
+  const text = data.candidates[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Gemini returned an empty response.');
-  return { text, status: res.status, rawBody };
+  return text;
 }
 
-async function callPerplexity(
-  apiKey:       string,
-  modelVersion: string,
-  prompt:       string,
-): Promise<{ text: string; status: number; rawBody: string }> {
+async function callPerplexity(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch('https://api.perplexity.ai/chat/completions', {
     method:  'POST',
     headers: {
@@ -224,187 +149,42 @@ async function callPerplexity(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model:    modelVersion,
+      model:    'sonar-pro',
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 
-  const rawBody = await res.text();
-  if (!res.ok) return { text: '', status: res.status, rawBody };
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Perplexity ${res.status}: ${body}`);
+  }
 
-  const data = JSON.parse(rawBody) as {
+  const data = await res.json() as {
     choices: Array<{ message: { content: string } }>;
   };
-  const text = data.choices[0]?.message?.content ?? '';
+  const text = data.choices[0]?.message?.content;
   if (!text) throw new Error('Perplexity returned an empty response.');
-  return { text, status: res.status, rawBody };
+  return text;
 }
 
-// ─── Unified dispatcher ───────────────────────────────────────────────────────
-
-async function dispatchCall(
-  provider:     string,
-  modelVersion: string,
-  prompt:       string,
-  env:          CloudflareEnv,
-): Promise<{ text: string; status: number; rawBody: string }> {
-  switch (provider) {
-    case 'claude':
-      return callClaude(env.ANTHROPIC_API_KEY, modelVersion, prompt);
-    case 'chatgpt':
-      return callChatGPT(env.OPENAI_API_KEY, modelVersion, prompt);
-    case 'gemini':
-      return callGemini(env.GEMINI_API_KEY, modelVersion, prompt);
-    case 'perplexity':
-      return callPerplexity(env.PERPLEXITY_API_KEY, modelVersion, prompt);
-    default:
-      throw new Error(
-        `Unknown provider "${provider}". Supported: claude, chatgpt, gemini, perplexity.`,
-      );
-  }
-}
-
-// ─── Gemini: aggressive model-list fallback ───────────────────────────────────
-
-async function callGeminiWithAggressiveFallback(
-  apiKey:        string,
-  tierModel:     string,
-  prompt:        string,
-): Promise<string> {
-  const seen    = new Set<string>();
-  const toTry: string[] = [];
-  for (const m of [tierModel, ...GEMINI_FALLBACK_MODELS]) {
-    if (!seen.has(m)) { seen.add(m); toTry.push(m); }
-  }
-
-  const failures: { model: string; status: number; snippet: string }[] = [];
-
-  for (const model of toTry) {
-    const isFirstAttempt = model === toTry[0];
-
-    if (!isFirstAttempt) {
-      console.warn(
-        `[Engine | Gemini] Aggressive fallback → trying "${model}" ` +
-        `(previous failures: ${failures.map((f) => `${f.model}→HTTP${f.status}`).join(', ')})`,
-      );
-    }
-
-    let result: { text: string; status: number; rawBody: string };
-    try {
-      result = await callGemini(apiKey, model, prompt);
-    } catch (networkErr) {
-      console.error(`[Engine | Gemini] Network error for "${model}":`, networkErr);
-      failures.push({ model, status: 0, snippet: String(networkErr) });
-      continue;
-    }
-
-    if (result.status === 200) {
-      if (!isFirstAttempt) {
-        console.info(
-          `[Engine | Gemini] Aggressive fallback succeeded with model="${model}" ` +
-          `after ${failures.length} failed attempt(s): ` +
-          failures.map((f) => f.model).join(' → '),
-        );
-      }
-      return result.text;
-    }
-
-    if ([401, 403, 429].includes(result.status)) {
-      throw new Error(
-        `Gemini (${model}) HTTP ${result.status} — this error cannot be resolved ` +
-        `by trying a different model: ${result.rawBody.slice(0, 300)}`,
-      );
-    }
-
-    if (isModelUnavailableError(result.status, result.rawBody)) {
-      const snippet = result.rawBody.slice(0, 150);
-      console.warn(`[Engine | Gemini] Model "${model}" unavailable (HTTP ${result.status}): ${snippet}`);
-      failures.push({ model, status: result.status, snippet });
-      continue;
-    }
-
-    throw new Error(
-      `Gemini (${model}) HTTP ${result.status}: ${result.rawBody.slice(0, 400)}`,
-    );
-  }
-
-  const attemptSummary = failures
-    .map((f, i) => `  ${i + 1}. ${f.model} → HTTP ${f.status || 'network error'}: ${f.snippet}`)
-    .join('\n');
-
-  throw new Error(
-    `All ${toTry.length} Gemini model(s) failed.\n` +
-    `Attempted (in order): ${toTry.join(', ')}\n` +
-    `Failure details:\n${attemptSummary}`,
-  );
-}
-
-// ─── Standard tier-based fallback (non-Gemini providers) ─────────────────────
-
-async function callWithTierFallback(
-  provider:   string,
-  tier:       string,
-  prompt:     string,
-  env:        CloudflareEnv,
-): Promise<string> {
-  const tiersToTry: string[] = [tier, ...getFallbackTiers(tier)];
-  let lastError = '';
-
-  for (const currentTier of tiersToTry) {
-    const modelVersion = getActualModelVersion(provider, currentTier);
-
-    if (currentTier !== tier) {
-      console.warn(
-        `[Engine] Tier fallback: provider="${provider}" ` +
-        `"${tier}" → "${currentTier}" (${modelVersion}) after: ${lastError}`,
-      );
-    }
-
-    let result: { text: string; status: number; rawBody: string };
-    try {
-      result = await dispatchCall(provider, modelVersion, prompt, env);
-    } catch (networkErr) {
-      throw networkErr;
-    }
-
-    if (result.status === 200) {
-      if (currentTier !== tier) {
-        console.info(
-          `[Engine] Tier fallback succeeded: provider="${provider}" ` +
-          `tier="${currentTier}" model="${modelVersion}"`,
-        );
-      }
-      return result.text;
-    }
-
-    if (isModelUnavailableError(result.status, result.rawBody)) {
-      lastError = `HTTP ${result.status} — ${result.rawBody.slice(0, 200)}`;
-      continue;
-    }
-
-    throw new Error(
-      `${provider} (${modelVersion}) HTTP ${result.status}: ${result.rawBody.slice(0, 400)}`,
-    );
-  }
-
-  throw new Error(
-    `All model tiers for provider="${provider}" failed. Last error: ${lastError}`,
-  );
-}
-
-// ─── Public callAI: routes to the correct strategy per provider ───────────────
-
+/** Routes the call to the correct provider. Throws on unsupported model. */
 async function callAI(
-  provider:   string,
-  tier:       string,
-  prompt:     string,
-  env:        CloudflareEnv,
+  model:  string,
+  prompt: string,
+  env:    CloudflareEnv,
 ): Promise<string> {
-  if (provider === 'gemini') {
-    const tierModel = getActualModelVersion('gemini', tier);
-    return callGeminiWithAggressiveFallback(env.GEMINI_API_KEY, tierModel, prompt);
+  switch (model) {
+    case 'claude':
+      return callClaude(env.ANTHROPIC_API_KEY, prompt);
+    case 'chatgpt':
+      return callChatGPT(env.OPENAI_API_KEY, prompt);
+    case 'gemini':
+      return callGemini(env.GEMINI_API_KEY, prompt);
+    case 'perplexity':
+      return callPerplexity(env.PERPLEXITY_API_KEY, prompt);
+    default:
+      throw new Error(`Unknown model "${model}". Supported: claude, chatgpt, gemini, perplexity.`);
   }
-  return callWithTierFallback(provider, tier, prompt, env);
 }
 
 // ─── Main engine action ───────────────────────────────────────────────────────
@@ -418,6 +198,7 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
     const db  = getDb();
     const env = (getRequestContext().env as unknown) as CloudflareEnv;
 
+    // ── 1. Load steps ─────────────────────────────────────────────────────────
     const steps = await db
       .select()
       .from(prompts)
@@ -436,6 +217,7 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
       };
     }
 
+    // ── 2. Load asset name (used in generated post titles) ────────────────────
     const [assetRow] = await db
       .select({ name: assets.name })
       .from(assets)
@@ -443,17 +225,17 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
 
     const assetName = assetRow?.name ?? 'Unknown Asset';
 
+    // ── 3. Execute chain sequentially ─────────────────────────────────────────
     const stepOutputs: Record<number, string> = {};
 
     for (const step of steps) {
-      const resolvedTier    = step.modelTier ?? 'medium';
-      const resolvedVersion = getActualModelVersion(step.model, resolvedTier);
-
+      // Inject prior step outputs into the prompt text
       const resolvedPrompt = resolvePlaceholders(step.content, stepOutputs);
 
+      // Call the AI — isolate errors per-step so we can report which one failed
       let output: string;
       try {
-        output = await callAI(step.model, resolvedTier, resolvedPrompt, env);
+        output = await callAI(step.model, resolvedPrompt, env);
       } catch (aiErr) {
         return {
           success:      false,
@@ -461,14 +243,16 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
           totalSteps,
           postsCreated,
           failedStep:   step.order,
-          failedModel:  resolvedVersion,
+          failedModel:  step.model,
           error:        aiErr instanceof Error ? aiErr.message : String(aiErr),
         };
       }
 
+      // Always store the raw output so subsequent steps can reference it
       stepOutputs[step.order] = output;
       stepsRun++;
 
+      // ── Route output ────────────────────────────────────────────────────────
       if (step.outputTo === 'blog_draft') {
         await db.insert(posts).values({
           title:   `[${assetName}] AI Draft — Step ${step.order}`,
@@ -479,25 +263,31 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
         postsCreated++;
 
       } else if (step.outputTo === 'telegram') {
+        // Telegram integration will be wired up in a future iteration.
+        // For now we log the first 500 chars so it's visible in Wrangler logs.
         console.log(
           `[Engine → Telegram | Asset: ${assetName} | Step ${step.order}]\n` +
           output.slice(0, 500) +
           (output.length > 500 ? '…' : ''),
         );
+
       }
+      // outputTo === 'next_step': output is already in stepOutputs — nothing else to do.
     }
 
+    // Invalidate the posts page cache so new blog drafts appear immediately
     if (postsCreated > 0) revalidatePath('/posts');
 
     return { success: true, stepsRun, totalSteps, postsCreated };
 
   } catch (outerErr) {
+    // Catches DB errors, context errors, etc.
     return {
       success:      false,
       stepsRun,
       totalSteps,
       postsCreated,
-      error: `Unexpected engine error: ${outerErr instanceof Error ? outerErr.message : String(outerErr)}`,
+      error:        `Unexpected engine error: ${outerErr instanceof Error ? outerErr.message : String(outerErr)}`,
     };
   }
 }
