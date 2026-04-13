@@ -31,7 +31,7 @@ export async function runEngine(assetId: number) { // eslint-disable-line @types
  */
 
 import { asc, eq }          from 'drizzle-orm';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+
 import { revalidatePath }    from 'next/cache';
 import { getDb }             from '@/db';
 import { prompts, posts, assets } from '@/db/schema';
@@ -39,7 +39,6 @@ import { prompts, posts, assets } from '@/db/schema';
 // ─── Environment typing ───────────────────────────────────────────────────────
 
 type CloudflareEnv = {
-  DB:                  D1Database;
   ANTHROPIC_API_KEY:   string;
   OPENAI_API_KEY:      string;
   GEMINI_API_KEY:      string;
@@ -582,7 +581,6 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
 
   try {
     const db  = getDb();
-    const env = (getRequestContext().env as unknown) as CloudflareEnv;
 
     // ── 1. Load steps ─────────────────────────────────────────────────────────
     const steps = await db
@@ -625,7 +623,7 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
       // Call the AI with automatic tier fallback — isolate errors per-step.
       let output: string;
       try {
-        output = await callAI(step.model, resolvedTier, resolvedPrompt, env);
+        output = await callAI(step.model, resolvedTier, resolvedPrompt, process.env as any);
       } catch (aiErr) {
         return {
           success:      false,
@@ -658,7 +656,7 @@ export async function runPromptChain(assetId: number): Promise<ChainRunResult> {
           `━━━━━━━━━━━━━━━━━━━━━\n` +
           output;
 
-        await sendToTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, message);
+        await sendToTelegram(process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!, message);
 
       }
       // outputTo === 'next_step': output is already in stepOutputs — nothing else to do.
