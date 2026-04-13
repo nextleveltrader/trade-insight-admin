@@ -9,6 +9,7 @@
  */
 
 import { eq, asc }                from 'drizzle-orm';
+import { checkAuth }              from '@/actions/auth.actions';
 import { getDb }                  from '@/db';
 import { categories, assets, prompts } from '@/db/schema';
 import type { Category, Asset, DBPrompt } from '@/db/schema';
@@ -36,8 +37,10 @@ export type InitialData = {
 /**
  * Called once from the Server Component to hydrate the Client Component.
  * Returns all rows flat; the client groups prompts by assetId.
+ * Requires authentication.
  */
 export async function getInitialData(): Promise<InitialData> {
+  await checkAuth();
   const db = getDb();
   const [allCategories, allAssets, allPrompts] = await Promise.all([
     db.select().from(categories),
@@ -52,6 +55,7 @@ export async function getInitialData(): Promise<InitialData> {
 export async function addCategory(
   name: string,
 ): Promise<ActionResult<Category>> {
+  await checkAuth();
   if (!name.trim()) return err('Category name is required.');
   try {
     const db = getDb();
@@ -68,6 +72,7 @@ export async function addCategory(
 export async function deleteCategory(
   id: number,
 ): Promise<ActionResult<{ deletedId: number }>> {
+  await checkAuth();
   try {
     const db = getDb();
 
@@ -95,6 +100,7 @@ export async function addAsset(
   name: string,
   categoryId: number,
 ): Promise<ActionResult<Asset>> {
+  await checkAuth();
   if (!name.trim())  return err('Asset name is required.');
   if (!categoryId)   return err('Category ID is required.');
   try {
@@ -112,6 +118,7 @@ export async function addAsset(
 export async function deleteAsset(
   id: number,
 ): Promise<ActionResult<{ deletedId: number }>> {
+  await checkAuth();
   try {
     const db = getDb();
     // Cascade: delete all prompts for this asset first.
@@ -149,6 +156,7 @@ export type UpsertPromptInput = {
 export async function upsertPromptStep(
   input: UpsertPromptInput,
 ): Promise<ActionResult<DBPrompt>> {
+  await checkAuth();
   try {
     const db = getDb();
     // Defensive: normalise tier so DB never receives an unexpected value.
@@ -206,6 +214,7 @@ export async function deletePromptStep(
   id: number,
   assetId: number,
 ): Promise<ActionResult<DBPrompt[]>> {
+  await checkAuth();
   try {
     const db = getDb();
     await db.delete(prompts).where(eq(prompts.id, id));

@@ -6,6 +6,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { eq, desc }       from 'drizzle-orm';
+import { checkAuth } from '@/actions/auth.actions';
 import { getDb }          from '@/db';
 import { posts, assets }  from '@/db/schema';
 import type { DBPost, Asset } from '@/db/schema';
@@ -40,8 +41,10 @@ export type PostsPageData = {
 /**
  * Single call from the Server Component — returns all posts (joined with asset
  * name, newest first) and the full asset list for the "Create Post" form selector.
+ * Requires authentication.
  */
 export async function getPostsPageData(): Promise<PostsPageData> {
+  await checkAuth();
   try {
     const db = getDb();
 
@@ -95,6 +98,7 @@ export type CreatePostInput = {
 export async function createManualPost(
   input: CreatePostInput,
 ): Promise<ActionResult<PostWithAsset>> {
+  await checkAuth();
   if (!input.title.trim())   return err('Title is required.');
   if (!input.content.trim()) return err('Content is required.');
 
@@ -149,6 +153,7 @@ export async function updatePostStatus(
   id:     number,
   status: PostStatus,
 ): Promise<ActionResult<PostWithAsset>> {
+  await checkAuth();
   if (!id)     return err('Post ID is required.');
   if (!status) return err('Status is required.');
 
@@ -188,6 +193,7 @@ export async function updatePostStatus(
 export async function deletePost(
   id: number,
 ): Promise<ActionResult<{ deletedId: number }>> {
+  await checkAuth();
   if (!id) return err('Post ID is required.');
 
   try {
