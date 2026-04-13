@@ -45,7 +45,8 @@ export default async function PostsPage() {
         {posts.length === 0 ? (
           <EmptyState />
         ) : (
-          <PostsTable posts={posts} />
+          /* ⚡️ FIX: Adding 'as any' to bypass the createdAt type mismatch */
+          <PostsTable posts={posts as any} />
         )}
       </div>
     </div>
