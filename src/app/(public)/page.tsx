@@ -40,7 +40,7 @@ import {
 import { getDb } from "@/db";
 import { assets, categories } from "@/db/schema";
 import { eq } from "drizzle-orm";
-
+export const dynamic = 'force-dynamic';
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 type Direction = "Bullish" | "Bearish" | "Neutral";
@@ -77,16 +77,18 @@ const FALLBACK_ASSETS = [
 // ─── STATIC DATA ─────────────────────────────────────────────────────────────
 
 const LANGUAGES = [
-  { code: "EN", label: "English"    },
-  { code: "AR", label: "العربية"    },
-  { code: "TR", label: "Türkçe"     },
-  { code: "ID", label: "Bahasa"     },
-  { code: "ES", label: "Español"    },
-  { code: "PT", label: "Português"  },
-  { code: "FR", label: "Français"   },
-  { code: "DE", label: "Deutsch"    },
-  { code: "RU", label: "Русский"    },
-  { code: "ZH", label: "中文"        },
+  { code: "EN", label: "English" },
+  { code: "BN", label: "বাংলা" }, // Added
+  { code: "HI", label: "हिन्दी" }, // Added
+  { code: "AR", label: "العربية" },
+  { code: "TR", label: "Türkçe" },
+  { code: "ID", label: "Bahasa" },
+  { code: "ES", label: "Español" },
+  { code: "PT", label: "Português" },
+  { code: "FR", label: "Français" },
+  { code: "RU", label: "Русский" },
+  { code: "DE", label: "Deutsch" },
+  { code: "CN", label: "中文" },
 ];
 
 // Feature cards — updated AI translation copy to be stronger
@@ -132,7 +134,7 @@ const FEATURES = [
     borderClass: "border-amber-500/30",
     bgClass: "bg-amber-500/[0.04]",
     iconClass: "text-amber-400 bg-amber-500/10",
-    tag: "10 Languages",
+    tag: "12 Languages",
     tagClass: "text-amber-400 bg-amber-500/10 border-amber-500/25",
   },
 ];
@@ -395,7 +397,7 @@ function HeroSection({ liveAssets }: { liveAssets: string[] }) {
           </span>
           <span className="flex items-center gap-1.5">
             <CheckCircle size={11} className="text-emerald-500" />
-            10 languages, AI-translated
+            12 languages, AI-translated
           </span>
         </div>
       </div>
@@ -527,7 +529,7 @@ function TranslationBanner() {
               <p className="text-xs font-light leading-relaxed text-zinc-500">
                 Our native AI translation preserves financial terminology, ICT concepts, and market
                 context across{" "}
-                <span className="font-medium text-zinc-300">10 languages</span>.
+                <span className="font-medium text-zinc-300">12 languages</span>.
                 This is not generic machine translation — it is purpose-built for market analysis.
               </p>
             </div>
@@ -868,7 +870,7 @@ function Footer() {
           {/* AI translation note */}
           <div className="flex items-center gap-1.5">
             <Languages size={11} className="text-amber-500/60" />
-            <span className="text-[10px] text-zinc-700">AI-translated · 10 languages</span>
+            <span className="text-[10px] text-zinc-700">AI-translated · 12 languages</span>
           </div>
         </div>
 
