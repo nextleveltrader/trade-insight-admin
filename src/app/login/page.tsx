@@ -1,3 +1,5 @@
+export const runtime = 'edge';  // ← এই line যোগ করুন
+
 'use client';
 
 import { useState, useTransition } from 'react';
