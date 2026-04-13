@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestContext }         from '@cloudflare/next-on-pages';
 
-export const runtime = 'edge';
 
 const COOKIE_NAME   = 'admin_session';
 const SESSION_LABEL = 'admin-session-v1';
