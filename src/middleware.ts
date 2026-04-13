@@ -1,59 +1,39 @@
-// src/middleware.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { auth } from "@/auth";
+import { NextResponse } from "next/server";
 
-const COOKIE_NAME   = 'admin_session';
-const SESSION_LABEL = 'admin-session-v1';
+export default auth((req) => {
+  const { nextUrl } = req;
+  const isLoggedIn = !!req.auth; // ইউজার লগইন করা থাকলে এটি true হবে
 
-async function deriveSessionToken(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw', enc.encode(password),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false, ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(SESSION_LABEL));
-  return Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+  // ১. চেক করছি ইউজার কোন পেজে যেতে চাচ্ছে
+  const isLoginPage = nextUrl.pathname.startsWith('/admin/login');
+  
+  // আমরা /admin এর সব পেজ প্রটেক্ট করব, শুধু login পেজ বাদে
+  const isAdminRoute = nextUrl.pathname.startsWith('/admin') && !isLoginPage;
+  
+  // ভবিষ্যতের জন্য ইউজার ড্যাশবোর্ডও প্রটেক্ট করে রাখলাম
+  const isUserDashboardRoute = nextUrl.pathname.startsWith('/dashboard');
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const isProtectedRoute = isAdminRoute || isUserDashboardRoute;
 
-  // ── Public routes — never require auth ────────────────────────────────────
-  // /admin/login is intentionally excluded from protection so unauthenticated
-  // users can reach the login form without being redirected in a loop.
-  if (
-    pathname === '/'                         ||
-    pathname.startsWith('/blog')             ||
-    pathname.startsWith('/admin/login')      ||
-    pathname.startsWith('/_next')            ||
-    pathname.startsWith('/favicon')          ||
-    pathname.startsWith('/api')
-  ) {
-    return NextResponse.next();
+  // ২. যদি প্রটেক্টেড পেজে যেতে চায় কিন্তু লগইন করা না থাকে
+  if (isProtectedRoute && !isLoggedIn) {
+    // তাকে লগইন পেজে পাঠিয়ে দিন
+    return NextResponse.redirect(new URL('/admin/login', req.url));
   }
 
-  // ── Protected: all /admin/* routes (except /admin/login above) ───────────
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const sessionCookie = request.cookies.get(COOKIE_NAME)?.value;
-
-  if (!adminPassword || !sessionCookie) {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+  // ৩. যদি অলরেডি লগইন করা থাকে এবং আবার লগইন পেজে যায়
+  if (isLoginPage && isLoggedIn) {
+    // তাকে সোজা অ্যাডমিন প্যানেলে পাঠিয়ে দিন
+    return NextResponse.redirect(new URL('/admin/posts', req.url));
   }
 
-  const expectedToken = await deriveSessionToken(adminPassword);
-
-  if (sessionCookie !== expectedToken) {
-    const response = NextResponse.redirect(new URL('/admin/login', request.url));
-    response.cookies.delete(COOKIE_NAME);
-    return response;
-  }
-
+  // ৪. এছাড়া বাকি সব পেজ (যেমন: /, /blog) সবার জন্য উন্মুক্ত থাকবে
   return NextResponse.next();
-}
+});
 
+// এই ম্যাচারটি নিশ্চিত করবে যে মিডলওয়্যার শুধু পেজগুলোর ওপর কাজ করবে, 
+// কোনো ইমেজ বা স্ট্যাটিক ফাইলের ওপর নয় (NextAuth এর স্ট্যান্ডার্ড নিয়ম)
 export const config = {
-  // Run middleware only on admin routes; static assets bypass it automatically.
-  matcher: ['/admin/:path*'],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

@@ -1,5 +1,6 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer,  primaryKey, unique  } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 
@@ -76,3 +77,56 @@ export type Category = typeof categories.$inferSelect;
 export type Asset    = typeof assets.$inferSelect;
 export type DBPrompt = typeof prompts.$inferSelect;
 export type DBPost   = typeof posts.$inferSelect;
+
+// ─── USER AUTHENTICATION TABLES (Auth.js v5) ───
+
+export const users = sqliteTable("user", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").notNull().unique(),
+  emailVerified: integer("emailVerified", { mode: "timestamp_ms" }),
+  image: text("image"),
+  password: text("password"), // ইমেইল-পাসওয়ার্ড দিয়ে লগইন করার জন্য
+  role: text("role").default("user"), // ভবিষ্যতে কে ইউজার আর কে অ্যাডমিন তা বোঝার জন্য
+  createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const accounts = sqliteTable("account", {
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  provider: text("provider").notNull(),
+  providerAccountId: text("providerAccountId").notNull(),
+  refresh_token: text("refresh_token"),
+  access_token: text("access_token"),
+  expires_at: integer("expires_at"),
+  token_type: text("token_type"),
+  scope: text("scope"),
+  id_token: text("id_token"),
+  session_state: text("session_state"),
+},
+(account) => ({
+  compoundKey: primaryKey({
+    columns: [account.provider, account.providerAccountId],
+  }),
+})
+);
+
+// ─── USER FEATURES TABLES ───
+
+export const savedPosts = sqliteTable("saved_posts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }), 
+  postId: text("post_id")
+    .notNull()
+    .references(() => posts.id, { onDelete: "cascade" }), 
+  savedAt: text("saved_at").default(sql`CURRENT_TIMESTAMP`),
+},
+(table) => ({
+  // primaryKey এর বদলে unique ব্যবহার করা হলো, যাতে এক ইউজার একই পোস্ট দু'বার সেভ করতে না পারে
+  uniqueSave: unique("unique_save_idx").on(table.userId, table.postId),
+})
+);
