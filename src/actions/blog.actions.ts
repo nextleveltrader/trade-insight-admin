@@ -21,6 +21,10 @@ export type PostFormData = {
   slug: string;
   content: string;
   status: 'draft' | 'published';
+  category?: string;      // ? মানে এটি অপশনাল
+  tags?: string;
+  metaDescription?: string;
+  metaKeywords?: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -111,15 +111,16 @@ export default function PostEditorClient({ post }: PostEditorClientProps) {
           title,
           content,
           status,
-          category: category.trim() || null,
-          tags: tags.trim() || null,
-          slug: slug.trim() || null,
-          metaDescription: metaDescription.trim() || null,
-          metaKeywords: metaKeywords.trim() || null,
+          // ⚡️ FIX: Changed 'null' to 'undefined' to match TypeScript definitions
+          category: category.trim() || undefined,
+          tags: tags.trim() || undefined,
+          slug: slug.trim() || undefined,
+          metaDescription: metaDescription.trim() || undefined,
+          metaKeywords: metaKeywords.trim() || undefined,
         });
         showToast('Post saved successfully.');
         router.refresh();
-      } catch {
+      } catch (err) {
         showToast('Failed to save post.', false);
       }
     });
@@ -136,7 +137,7 @@ export default function PostEditorClient({ post }: PostEditorClientProps) {
       try {
         await deletePost(post.id);
         router.push('/posts');
-      } catch {
+      } catch (err) {
         showToast('Failed to delete post.', false);
       }
     });
