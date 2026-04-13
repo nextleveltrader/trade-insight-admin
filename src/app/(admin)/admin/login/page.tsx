@@ -1,3 +1,4 @@
+// src/app/(admin)/admin/login/page.tsx
 'use client';
 
 import { useState, useTransition } from 'react';
@@ -20,7 +21,7 @@ export default function LoginPage() {
         } else {
           // Small delay to ensure cookie is set before navigation
           setTimeout(() => {
-            router.push('/posts');
+            router.push('/admin/posts');
             router.refresh();
           }, 100);
         }

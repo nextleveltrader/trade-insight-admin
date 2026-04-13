@@ -1,3 +1,4 @@
+// src/middleware.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 const COOKIE_NAME   = 'admin_session';
@@ -19,29 +20,32 @@ async function deriveSessionToken(password: string): Promise<string> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // নিচের লিস্টে থাকা পাথগুলোতে পাসওয়ার্ড লাগবে না
+  // ── Public routes — never require auth ────────────────────────────────────
+  // /admin/login is intentionally excluded from protection so unauthenticated
+  // users can reach the login form without being redirected in a loop.
   if (
-    pathname === '/' ||                // হোমপেজকে মুক্ত করা হলো
-    pathname.startsWith('/login') ||
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon') ||
-    pathname.startsWith('/blog') ||
-    pathname.startsWith('/api')        // API রুটগুলোকেও সাধারণত বাইরে রাখা হয়
+    pathname === '/'                         ||
+    pathname.startsWith('/blog')             ||
+    pathname.startsWith('/admin/login')      ||
+    pathname.startsWith('/_next')            ||
+    pathname.startsWith('/favicon')          ||
+    pathname.startsWith('/api')
   ) {
     return NextResponse.next();
   }
 
+  // ── Protected: all /admin/* routes (except /admin/login above) ───────────
   const adminPassword = process.env.ADMIN_PASSWORD;
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value;
 
   if (!adminPassword || !sessionCookie) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/admin/login', request.url));
   }
 
   const expectedToken = await deriveSessionToken(adminPassword);
 
   if (sessionCookie !== expectedToken) {
-    const response = NextResponse.redirect(new URL('/login', request.url));
+    const response = NextResponse.redirect(new URL('/admin/login', request.url));
     response.cookies.delete(COOKIE_NAME);
     return response;
   }
@@ -50,10 +54,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    // শুধুমাত্র এই এরিয়াগুলোতে পাসওয়ার্ড কাজ করবে
-    '/assets/:path*',
-    '/posts/:path*',
-    '/admin/:path*',
-  ],
+  // Run middleware only on admin routes; static assets bypass it automatically.
+  matcher: ['/admin/:path*'],
 };

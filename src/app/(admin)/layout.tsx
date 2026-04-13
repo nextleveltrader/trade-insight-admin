@@ -1,12 +1,13 @@
-import Sidebar from "@/components/Sidebar"; // আপনার সাইডবারের সঠিক পাথ দিন
+// src/app/(admin)/admin/layout.tsx
+//
+// Clean shell for the entire /admin/* subtree.
+// The Login page lives here and deliberately has NO sidebar.
+// The (dashboard) route group nested below adds its own sidebar layout.
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-screen">
-      <Sidebar /> {/* সাইডবার শুধু অ্যাডমিন পেজেই দেখাবে */}
-      <main className="flex-1 p-6">
-        {children}
-      </main>
-    </div>
-  );
+export default function AdminShellLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
 }

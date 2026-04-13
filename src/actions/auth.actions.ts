@@ -1,3 +1,4 @@
+// src/actions/auth.actions.ts
 'use server';
 
 import { cookies }  from 'next/headers';
@@ -57,7 +58,7 @@ export async function login(password: string): Promise<{ error?: string }> {
 export async function logout(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(COOKIE_NAME);
-  redirect('/login');
+  redirect('/admin/login');
 }
 
 export async function checkAuth(): Promise<void> {
@@ -65,9 +66,9 @@ export async function checkAuth(): Promise<void> {
   const cookieStore   = await cookies();
   const session       = cookieStore.get(COOKIE_NAME)?.value;
 
-  if (!adminPassword || !session) redirect('/login');
+  if (!adminPassword || !session) redirect('/admin/login');
 
   const expectedToken = await deriveSessionToken(adminPassword!);
 
-  if (session !== expectedToken) redirect('/login');
+  if (session !== expectedToken) redirect('/admin/login');
 }

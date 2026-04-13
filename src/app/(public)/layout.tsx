@@ -1,3 +1,4 @@
+// src/app/(public)/layout.tsx
 import Link from 'next/link';
 
 export default function PublicLayout({
@@ -22,7 +23,7 @@ export default function PublicLayout({
           <nav className="flex gap-6 text-sm font-medium text-zinc-400">
             <Link href="/" className="hover:text-emerald-400 transition-colors">Home</Link>
             <Link href="/blog" className="hover:text-emerald-400 transition-colors">Blog</Link>
-            <Link href="/posts" className="hover:text-white transition-colors">Admin</Link>
+            <Link href="/admin/posts" className="hover:text-white transition-colors">Admin</Link>
           </nav>
         </div>
       </header>
