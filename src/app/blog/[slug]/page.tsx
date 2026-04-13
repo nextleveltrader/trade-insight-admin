@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getPostBySlug } from '@/actions/blog.actions';
-
+export const runtime = 'edge';
 // ─── Dynamic Metadata ─────────────────────────────────────────────────────────
 
 export async function generateMetadata({
