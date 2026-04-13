@@ -1,57 +1,48 @@
 'use server';
 
-import { getDb } from '@/db';
-import { posts } from '@/db/schema';
-import { eq, desc, and, or } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { posts } from '@/lib/schema';
+import { desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import type { DBPost } from '@/db/schema';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
-export type PublishedPost = {
-  id: number;
+export type Post = typeof posts.$inferSelect;
+
+export type PostFormData = {
   title: string;
+  slug: string;
   content: string;
-  status: string;
-  assetId: number | null;
-  createdAt: number;
-  category: string | null;
-  tags: string | null;
-  slug: string | null;
-  metaDescription: string | null;
-  metaKeywords: string | null;
+  status: 'draft' | 'published';
 };
 
-export type UpdatePostData = {
-  title?: string;
-  content?: string;
-  status?: string;
-  category?: string | null;
-  tags?: string | null;
-  slug?: string | null;
-  metaDescription?: string | null;
-  metaKeywords?: string | null;
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ── Read ───────────────────────────────────────────────────────────────────
 
 /**
- * Returns a Drizzle client bound to the Cloudflare D1 binding.
- * getDb() internally calls getRequestContext().env — must be invoked inside a
- * Server Action or Route Handler, never at module-evaluation time.
+ * Fetch every post (drafts + published), newest first.
+ * Used by the admin /posts listing page.
  */
-function getDatabase() {
-  return getDb();
+export async function getAllPosts(): Promise<Post[]> {
+  return db.select().from(posts).orderBy(desc(posts.createdAt));
 }
 
-// ─── Read Actions ─────────────────────────────────────────────────────────────
+/**
+ * Fetch a single post by ID. Returns undefined when not found.
+ */
+export async function getPostById(id: string): Promise<Post | undefined> {
+  const result = await db
+    .select()
+    .from(posts)
+    .where(eq(posts.id, id))
+    .limit(1);
+  return result[0];
+}
 
 /**
- * Fetch every published post, newest first.
+ * Fetch only published posts, newest first.
+ * Safe to call from public-facing pages.
  */
-export async function getPublishedPosts(): Promise<PublishedPost[]> {
-  const db = getDatabase();
-
+export async function getPublishedPosts(): Promise<Post[]> {
   return db
     .select()
     .from(posts)
@@ -59,92 +50,93 @@ export async function getPublishedPosts(): Promise<PublishedPost[]> {
     .orderBy(desc(posts.createdAt));
 }
 
-/**
- * Fetch a single published post by its URL slug **or** numeric ID.
- *
- * - Numeric string  → WHERE (id = $n OR slug = $slugOrId) AND status = 'published'
- * - Non-numeric     → WHERE  slug = $slugOrId              AND status = 'published'
- */
-export async function getPostBySlug(slugOrId: string): Promise<PublishedPost | null> {
-  if (!slugOrId || typeof slugOrId !== 'string') return null;
+// ── Create ─────────────────────────────────────────────────────────────────
 
-  const db = getDatabase();
-  const isNumeric = /^\d+$/.test(slugOrId);
+export async function createPost(
+  data: PostFormData
+): Promise<{ success: true; id: string } | { success: false; error: string }> {
+  try {
+    const result = await db
+      .insert(posts)
+      .values({
+        title: data.title,
+        slug: data.slug,
+        content: data.content,
+        status: data.status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning({ id: posts.id });
 
-  const lookupCondition = isNumeric
-    ? or(
-        eq(posts.id, parseInt(slugOrId, 10)),
-        eq(posts.slug, slugOrId),
-      )
-    : eq(posts.slug, slugOrId);
+    revalidatePath('/posts');
+    revalidatePath('/blog');
 
-  const [row] = await db
-    .select()
-    .from(posts)
-    .where(and(lookupCondition, eq(posts.status, 'published')))
-    .limit(1);
-
-  return row ?? null;
+    return { success: true, id: result[0].id };
+  } catch (err) {
+    console.error('[createPost]', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to create post.',
+    };
+  }
 }
 
-/**
- * Fetch any post (any status) by its numeric ID.
- * Used by the admin edit page to load drafts and archived posts too.
- */
-export async function getPostById(id: number): Promise<DBPost | null> {
-  const db = getDatabase();
+// ── Update ─────────────────────────────────────────────────────────────────
 
-  const [row] = await db
-    .select()
-    .from(posts)
-    .where(eq(posts.id, id))
-    .limit(1);
+export async function updatePost(
+  id: string,
+  data: Partial<PostFormData>
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    await db
+      .update(posts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(posts.id, id));
 
-  return row ?? null;
+    revalidatePath('/posts');
+    revalidatePath(`/posts/${id}`);
+    revalidatePath('/blog');
+
+    return { success: true };
+  } catch (err) {
+    console.error('[updatePost]', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to update post.',
+    };
+  }
 }
 
-// ─── Write Actions ────────────────────────────────────────────────────────────
+// ── Delete ─────────────────────────────────────────────────────────────────
 
-/**
- * Update an existing post.
- *
- * Next.js 15 note: this function is called from a Client Component via
- * `startTransition(async () => { await updatePost(...) })`.
- * No `params` awaiting is needed here because there are no route params — the
- * `id` is passed explicitly as an argument.
- */
-export async function updatePost(id: number, data: UpdatePostData): Promise<void> {
-  const db = getDatabase();
+export async function deletePost(
+  id: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    await db.delete(posts).where(eq(posts.id, id));
 
-  await db
-    .update(posts)
-    .set(data)
-    .where(eq(posts.id, id));
+    revalidatePath('/posts');
+    revalidatePath('/blog');
 
-  // Revalidate the admin listing, the edit page, and the public blog route.
-  revalidatePath('/posts');
-  revalidatePath(`/posts/${id}`);
-  if (data.slug) revalidatePath(`/blog/${data.slug}`);
+    return { success: true };
+  } catch (err) {
+    console.error('[deletePost]', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to delete post.',
+    };
+  }
 }
 
+// ── Slug helpers ────────────────────────────────────────────────────────────
+
 /**
- * Permanently delete a post.
- *
- * Reads the slug first so we can also revalidate the public blog route after
- * deletion (the row will no longer exist once deleted).
+ * Generate a URL-safe slug from an arbitrary string.
  */
-export async function deletePost(id: number): Promise<void> {
-  const db = getDatabase();
-
-  // Capture slug before deleting so we can purge the public cache entry.
-  const [meta] = await db
-    .select({ slug: posts.slug })
-    .from(posts)
-    .where(eq(posts.id, id))
-    .limit(1);
-
-  await db.delete(posts).where(eq(posts.id, id));
-
-  revalidatePath('/posts');
-  if (meta?.slug) revalidatePath(`/blog/${meta.slug}`);
+export function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }

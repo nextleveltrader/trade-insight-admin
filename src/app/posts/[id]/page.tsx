@@ -1,153 +1,84 @@
-/**
- * src/app/posts/[id]/page.tsx
- *
- * Admin edit page for a single blog post.
- *
- * This is a React Server Component. It:
- *  1. Awaits the `params` Promise (Next.js 15 requirement).
- *  2. Fetches the post via a Server Action (runs on the Edge / Cloudflare D1).
- *  3. Passes the post data down to <PostEditorClient>, which handles all
- *     client-side interactions (rich editor, save, delete).
- */
 export const runtime = 'edge';
-import { notFound } from 'next/navigation';
+
 import Link from 'next/link';
-import { getPostById } from '@/actions/blog.actions';
-import PostEditorClient from '@/components/PostEditorClient';
+import { getAllPosts } from '@/actions/blog.actions';
+import PostsTable from '@/components/PostsTable';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+export const metadata = {
+  title: 'Posts — Admin CMS',
+};
 
-interface PageProps {
-  // In Next.js 15, `params` is a Promise — must be awaited.
-  params: Promise<{ id: string }>;
-}
+export default async function PostsPage() {
+  const posts = await getAllPosts();
 
-// ─── Metadata ─────────────────────────────────────────────────────────────────
-
-export async function generateMetadata({ params }: PageProps) {
-  const { id } = await params;
-  const postId = parseInt(id, 10);
-  if (isNaN(postId)) return {};
-
-  const post = await getPostById(postId);
-  return {
-    title: post ? `Edit — ${post.title}` : 'Post Not Found',
-    robots: { index: false }, // Never index admin pages
-  };
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default async function EditPostPage({ params }: PageProps) {
-  // ── 1. Await params (Next.js 15 requirement) ───────────────────────────────
-  const { id } = await params;
-  const postId = parseInt(id, 10);
-
-  if (isNaN(postId)) notFound();
-
-  // ── 2. Fetch post from D1 ─────────────────────────────────────────────────
-  const post = await getPostById(postId);
-  if (!post) notFound();
-
-  // ── 3. Format helpers ─────────────────────────────────────────────────────
-  const createdDate = new Date(post.createdAt).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-
-  // ── 4. Render ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* ── Sticky Header ──────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          {/* Breadcrumb */}
-          <nav className="flex items-center gap-2 min-w-0">
-            <Link
-              href="/posts"
-              className="shrink-0 flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 text-sm transition-colors"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M19 12H5M12 5l-7 7 7 7" />
-              </svg>
-              All Posts
-            </Link>
-            <span className="text-zinc-700 shrink-0">/</span>
-            <span className="text-zinc-300 text-sm font-medium truncate">
-              {post.title}
-            </span>
-          </nav>
+      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
 
-          {/* Status badge */}
-          <span
-            className={[
-              'shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1',
-              post.status === 'published'
-                ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
-                : post.status === 'archived'
-                ? 'bg-zinc-700/60 text-zinc-400 ring-zinc-600/40'
-                : 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
-            ].join(' ')}
-          >
-            {post.status}
-          </span>
-        </div>
-      </header>
-
-      {/* ── Page Body ──────────────────────────────────────────────────────── */}
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        {/* Page heading */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+        {/* ── Header ── */}
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-100 tracking-tight">
-              Edit Post
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+              Posts
             </h1>
-            <p className="text-zinc-500 text-sm mt-1">
-              ID #{post.id} · Created {createdDate}
-              {post.slug && (
-                <>
-                  {' '}·{' '}
-                  <span className="font-mono text-zinc-600">/blog/{post.slug}</span>
-                </>
-              )}
+            <p className="mt-1 text-sm text-zinc-400">
+              {posts.length} post{posts.length !== 1 ? 's' : ''} total
             </p>
           </div>
-
-          {/* Quick preview link (only for published posts with a slug) */}
-          {post.status === 'published' && post.slug && (
-            <Link
-              href={`/blog/${post.slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300 transition-colors shrink-0"
+          <Link
+            href="/posts/new"
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4"
             >
-              View live post
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-                <path d="M15 3h6v6M10 14L21 3" />
-              </svg>
-            </Link>
-          )}
+              <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+            </svg>
+            New Post
+          </Link>
         </div>
 
-        {/* Editor form — all client-side interactivity lives here */}
-        <PostEditorClient post={post} />
-      </main>
+        {/* ── Table ── */}
+        {posts.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <PostsTable posts={posts} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700 bg-zinc-900 py-20 text-center">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={1.5}
+        stroke="currentColor"
+        className="mb-4 h-10 w-10 text-zinc-600"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+        />
+      </svg>
+      <p className="text-sm font-medium text-zinc-300">No posts yet</p>
+      <p className="mt-1 text-sm text-zinc-500">
+        Get started by creating your first post.
+      </p>
+      <Link
+        href="/posts/new"
+        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
+      >
+        Create first post
+      </Link>
     </div>
   );
 }
