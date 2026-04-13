@@ -12,7 +12,7 @@ export type PublishedPost = {
   id: number;
   title: string;
   content: string;
-  status: string;
+  status: 'draft' | 'published'; // <-- শুধু এই লাইনটা চেঞ্জ হবে
   assetId: number | null;
   createdAt: number;
   category: string | null;
