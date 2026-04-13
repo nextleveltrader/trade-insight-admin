@@ -1,22 +1,13 @@
 'use server';
 
-import { cookies }           from 'next/headers';
-import { redirect }          from 'next/navigation';
-import { getRequestContext } from '@cloudflare/next-on-pages';
+import { cookies }  from 'next/headers';
+import { redirect } from 'next/navigation';
 
 const COOKIE_NAME   = 'admin_session';
 const SESSION_LABEL = 'admin-session-v1';
 
+// দুটো জায়গাই process.env ব্যবহার করে — consistent
 function getAdminPassword(): string | undefined {
-  // প্রথমে Cloudflare runtime try করো
-  try {
-    const { env } = getRequestContext();
-    const cfPassword = (env as Record<string, string>).ADMIN_PASSWORD;
-    if (cfPassword) return cfPassword;
-  } catch {
-    // Cloudflare runtime নেই (local next dev)
-  }
-  // local dev fallback
   return process.env.ADMIN_PASSWORD;
 }
 
@@ -38,8 +29,8 @@ export async function login(password: string): Promise<{ error?: string }> {
     const adminPassword = getAdminPassword();
 
     if (!adminPassword) {
-      console.error('[auth] ADMIN_PASSWORD not set.');
-      return { error: 'Server misconfiguration. ADMIN_PASSWORD is not set.' };
+      console.error('[auth] ADMIN_PASSWORD not set in environment');
+      return { error: 'Server misconfiguration: ADMIN_PASSWORD is not set.' };
     }
 
     if (password !== adminPassword) {
@@ -51,7 +42,7 @@ export async function login(password: string): Promise<{ error?: string }> {
 
     cookieStore.set(COOKIE_NAME, token, {
       httpOnly : true,
-      secure   : process.env.NODE_ENV === 'production',
+      secure   : true,
       sameSite : 'lax',
       path     : '/',
       maxAge   : 60 * 60 * 24 * 7,
@@ -79,12 +70,5 @@ export async function checkAuth(): Promise<void> {
 
   const expectedToken = await deriveSessionToken(adminPassword!);
 
-  // timing-safe compare
-  const enc  = new TextEncoder();
-  const a    = enc.encode(session);
-  const b    = enc.encode(expectedToken);
-  if (a.length !== b.length) redirect('/login');
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  if (diff !== 0) redirect('/login');
+  if (session !== expectedToken) redirect('/login');
 }

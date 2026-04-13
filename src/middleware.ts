@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestContext }         from '@cloudflare/next-on-pages';
-
 
 const COOKIE_NAME   = 'admin_session';
 const SESSION_LABEL = 'admin-session-v1';
@@ -18,23 +16,9 @@ async function deriveSessionToken(password: string): Promise<string> {
     .join('');
 }
 
-function getPassword(): string | undefined {
-  // Cloudflare runtime-এ secret পাওয়ার চেষ্টা
-  try {
-    const { env } = getRequestContext();
-    const pw = (env as Record<string, string>).ADMIN_PASSWORD;
-    if (pw) return pw;
-  } catch {
-    // local dev-এ getRequestContext() throw করে
-  }
-  // local .env.local fallback
-  return process.env.ADMIN_PASSWORD;
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // এই paths-গুলো protect করবে না
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next') ||
@@ -44,7 +28,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const adminPassword = getPassword();
+  // Cloudflare Pages-এ Dashboard env variable → process.env-এ আসে
+  const adminPassword = process.env.ADMIN_PASSWORD;
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value;
 
   if (!adminPassword || !sessionCookie) {
