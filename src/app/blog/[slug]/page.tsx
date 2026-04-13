@@ -1,16 +1,20 @@
+export const runtime = 'edge';
+
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getPostBySlug } from '@/actions/blog.actions';
-export const runtime = 'edge';
+
 // ─── Dynamic Metadata ─────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
 }: {
-  params: { slug: string };
+  // Next.js 15+: params is now a Promise — must be awaited before access.
+  params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const post = await getPostBySlug(params.slug);
+  const { slug } = await params;
+  const post = await getPostBySlug(slug);
 
   if (!post) {
     return {
@@ -75,9 +79,11 @@ function PostBody({ content }: { content: string }) {
 export default async function BlogPostPage({
   params,
 }: {
-  params: { slug: string };
+  // Next.js 15+: params is now a Promise — must be awaited before access.
+  params: Promise<{ slug: string }>;
 }) {
-  const post = await getPostBySlug(params.slug);
+  const { slug } = await params;
+  const post = await getPostBySlug(slug);
 
   if (!post) {
     notFound();
