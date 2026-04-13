@@ -12,7 +12,7 @@
 
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { getPostById } from '@/actions/blog_actions';
+import { getPostById } from '@/actions/blog.actions';
 import PostEditorClient from '@/components/PostEditorClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

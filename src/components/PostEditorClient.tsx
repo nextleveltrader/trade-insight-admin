@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import type { DBPost } from '@/db/schema';
-import { updatePost, deletePost } from '@/actions/blog_actions';
+import { updatePost, deletePost } from '@/actions/blog.actions';
 
 // TipTap uses browser APIs — must be dynamically imported with ssr: false
 const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), {
