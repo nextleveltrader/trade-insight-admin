@@ -54,37 +54,44 @@ export async function getPublishedPosts(): Promise<PublishedPost[]> {
 }
 
 /**
- * Fetch a single published post by its URL slug or numeric ID.
- * Handles both /blog/my-slug and /blog/5 URL patterns.
- * Returns `null` when no matching post is found.
+ * Fetch a single published post by its URL slug **or** its numeric ID.
+ *
+ * The listing page links to `/blog/${post.slug ?? post.id}`, so the dynamic
+ * segment can be either a human-readable slug ("xauusd-weekly-outlook") or a
+ * bare integer ("12").  This function handles both:
+ *
+ *  - Numeric string  → WHERE (id = $n   OR slug = $slugOrId) AND status = 'published'
+ *  - Non-numeric     → WHERE  slug = $slugOrId               AND status = 'published'
+ *
+ * Using OR when the input is numeric means a row is matched whether the slug
+ * column has since been populated or not, while still preventing a full-table
+ * scan when a real slug is provided.
+ *
+ * Returns `null` when no matching published post is found.
  */
-export async function getPostBySlug(slug: string): Promise<PublishedPost | null> {
-  if (!slug || typeof slug !== 'string') return null;
+export async function getPostBySlug(slugOrId: string): Promise<PublishedPost | null> {
+  if (!slugOrId || typeof slugOrId !== 'string') return null;
 
   const db = getDatabase();
 
-  // Check if the slug parameter is a numeric ID
-  const numericId = Number(slug);
-  const isNumericId = (slug !== '' && !Number.isNaN(numericId) && Number.isInteger(numericId));
+  const isNumeric = /^\d+$/.test(slugOrId);
 
-  // Build the where condition based on whether we have a numeric ID or a text slug
-  const whereCondition = isNumericId
-    ? and(
-        or(
-          eq(posts.id, numericId),
-          eq(posts.slug, slug),
-        ),
-        eq(posts.status, 'published'),
+  const lookupCondition = isNumeric
+    ? or(
+        eq(posts.id,   parseInt(slugOrId, 10)),
+        eq(posts.slug, slugOrId),
       )
-    : and(
-        eq(posts.slug, slug),
-        eq(posts.status, 'published'),
-      );
+    : eq(posts.slug, slugOrId);
 
   const [row] = await db
     .select()
     .from(posts)
-    .where(whereCondition)
+    .where(
+      and(
+        lookupCondition,
+        eq(posts.status, 'published'),
+      ),
+    )
     .limit(1);
 
   return row ?? null;
