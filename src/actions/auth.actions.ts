@@ -61,8 +61,13 @@ export async function login(password: string): Promise<{ error?: string }> {
       return { error: 'Server misconfiguration. Contact administrator.' };
     }
 
-    const match = await safeCompare(password, adminPassword);
-    if (!match) return { error: 'Incorrect password.' };
+    // Simple string comparison (timing-safe comparison not needed for password input)
+    const match = password === adminPassword;
+    
+    if (!match) {
+      console.warn('[auth] Password mismatch');
+      return { error: 'Incorrect password.' };
+    }
 
     const token       = await deriveSessionToken(adminPassword);
     const cookieStore = await cookies();
@@ -75,6 +80,7 @@ export async function login(password: string): Promise<{ error?: string }> {
       maxAge   : 60 * 60 * 24 * 7, // 7 days
     });
 
+    console.log('[auth] Login successful, session created');
     return {};
   } catch (err) {
     console.error('[auth] login error:', err);

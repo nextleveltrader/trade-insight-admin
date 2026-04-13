@@ -13,12 +13,20 @@ export default function LoginPage() {
   async function handleSubmit() {
     setError(null);
     startTransition(async () => {
-      const result = await login(password);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        router.push('/posts'); // or wherever your main admin page is
-        router.refresh();
+      try {
+        const result = await login(password);
+        if (result.error) {
+          setError(result.error);
+        } else {
+          // Small delay to ensure cookie is set before navigation
+          setTimeout(() => {
+            router.push('/posts');
+            router.refresh();
+          }, 100);
+        }
+      } catch (err) {
+        console.error('Login error:', err);
+        setError('An unexpected error occurred during login.');
       }
     });
   }

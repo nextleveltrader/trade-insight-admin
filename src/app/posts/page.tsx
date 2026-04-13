@@ -12,8 +12,12 @@ import PostsManager   from './PostsManager';
 export const runtime = 'edge'; // required for Cloudflare Pages + D1
 
 export default async function PostsPage() {
-  await checkAuth();
-  const { posts, assets } = await getPostsPageData();
-
-  return <PostsManager initialPosts={posts} assets={assets} />;
+  try {
+    await checkAuth();
+    const data = await getPostsPageData();
+    return <PostsManager initialPosts={data.posts} assets={data.assets} />;
+  } catch (error) {
+    console.error('[PostsPage] Error:', error);
+    throw error; // Let Next.js error boundary handle it
+  }
 }
