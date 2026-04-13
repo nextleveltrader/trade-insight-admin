@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getPublishedPosts, type PublishedPost } from '@/actions/blog.actions';
-export const runtime = 'edge'; // required for Cloudflare Pages + D1
+
 // ─── Metadata ────────────────────────────────────────────────────────────────
 
 export const metadata = {

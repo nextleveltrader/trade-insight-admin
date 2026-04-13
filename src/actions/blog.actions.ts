@@ -1,6 +1,5 @@
 'use server';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
 import { getDb } from '@/db';
 import { posts } from '@/db/schema';
 import { desc, eq, and, or } from 'drizzle-orm';
@@ -8,10 +7,8 @@ import { revalidatePath } from 'next/cache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// Drizzle থেকে সরাসরি অরিজিনাল ডাটাবেস টাইপ নিয়ে নিচ্ছি
 export type Post = typeof posts.$inferSelect;
 
-// স্ট্যাটাসকে ফিক্স করে দিচ্ছি যাতে "draft" বা "published" ছাড়া অন্য কিছু না হয়
 export type PublishedPost = Omit<Post, 'status'> & {
   status: 'draft' | 'published';
 };
@@ -21,35 +18,29 @@ export type PostFormData = {
   slug: string;
   content: string;
   status: 'draft' | 'published';
-  category?: string;      // ? মানে এটি অপশনাল
+  category?: string;
   tags?: string;
   metaDescription?: string;
   metaKeywords?: string;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getDatabase() {
-  return getDb();
-}
-
 // ─── Public Blog Actions ──────────────────────────────────────────────────────
 
 export async function getPublishedPosts() {
-  const db = getDatabase();
+  const db = getDb();
   const rows = await db
     .select()
     .from(posts)
     .where(eq(posts.status, 'published'))
     .orderBy(desc(posts.createdAt));
-    
+
   return rows as unknown as PublishedPost[];
 }
 
 export async function getPostBySlug(slugOrId: string) {
   if (!slugOrId || typeof slugOrId !== 'string') return null;
 
-  const db = getDatabase();
+  const db = getDb();
   const isNumeric = /^\d+$/.test(slugOrId);
 
   const lookupCondition = isNumeric
@@ -65,25 +56,25 @@ export async function getPostBySlug(slugOrId: string) {
   return (row as unknown as PublishedPost) ?? null;
 }
 
-// ─── Admin CMS Actions (CRUD) ─────────────────────────────────────────────────
+// ─── Admin CMS Actions ────────────────────────────────────────────────────────
 
 export async function getAllPosts() {
-  const db = getDatabase();
+  const db = getDb();
   const rows = await db.select().from(posts).orderBy(desc(posts.createdAt));
-  
+
   return rows as unknown as PublishedPost[];
 }
 
 export async function getPostById(id: string | number) {
-  const db = getDatabase();
+  const db = getDb();
   const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
-  
+
   const [post] = await db
     .select()
     .from(posts)
     .where(eq(posts.id, numericId))
     .limit(1);
-    
+
   return (post as unknown as PublishedPost) || undefined;
 }
 
@@ -91,7 +82,7 @@ export async function createPost(
   data: PostFormData
 ): Promise<{ success: true; id: number } | { success: false; error: string }> {
   try {
-    const db = getDatabase();
+    const db = getDb();
     const result = await db
       .insert(posts)
       .values({
@@ -99,7 +90,7 @@ export async function createPost(
         slug: data.slug,
         content: data.content,
         status: data.status,
-        createdAt: new Date(), 
+        createdAt: new Date(),
       } as any)
       .returning({ id: posts.id });
 
@@ -121,7 +112,7 @@ export async function updatePost(
   data: Partial<PostFormData>
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const db = getDatabase();
+    const db = getDb();
     const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
 
     await db
@@ -150,7 +141,7 @@ export async function deletePost(
   id: string | number
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const db = getDatabase();
+    const db = getDb();
     const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
 
     await db.delete(posts).where(eq(posts.id, numericId));
@@ -168,7 +159,7 @@ export async function deletePost(
   }
 }
 
-// ─── Slug helpers ────────────────────────────────────────────────────────────
+// ─── Slug helper ──────────────────────────────────────────────────────────────
 
 export async function generateSlug(title: string): Promise<string> {
   return title

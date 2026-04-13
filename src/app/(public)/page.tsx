@@ -1,5 +1,3 @@
-export const runtime = 'edge'; // Cloudflare এর জন্য বাধ্যতামূলক
-
 import Link from 'next/link';
 import { getPublishedPosts } from '@/actions/blog.actions';
 

@@ -1,5 +1,3 @@
-export const runtime = 'edge';
-
 import Link from 'next/link';
 import { getAllPosts } from '@/actions/blog.actions';
 import PostsTable from '@/components/PostsTable';

@@ -1,43 +1,15 @@
-/**
- * src/db/index.ts
- *
- * Returns a Drizzle ORM instance bound to the Cloudflare D1 database.
- *
- * REQUIREMENTS:
- *   npm install @cloudflare/next-on-pages
- *
- * LOCAL DEV:
- *   Use `wrangler pages dev` (not `next dev`) so that getRequestContext()
- *   can access the D1 binding. Add the following to wrangler.toml:
- *
- *     [[d1_databases]]
- *     binding = "DB"
- *     database_name = "trade-admin"
- *     database_id   = "<your-d1-database-id>"
- *
- * MIGRATIONS:
- *   npx drizzle-kit generate
- *   npx wrangler d1 migrations apply trade-admin --local   # local
- *   npx wrangler d1 migrations apply trade-admin           # production
- */
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import * as schema from './schema';
 
-import { getRequestContext } from '@cloudflare/next-on-pages';
-import { drizzle }           from 'drizzle-orm/d1';
-import * as schema           from './schema';
+function getDb() {
+  const client = createClient({
+    url: process.env.DATABASE_URL!,
+    authToken: process.env.DATABASE_AUTH_TOKEN,
+  });
 
-export type DB = ReturnType<typeof getDb>;
-
-export function getDb() {
-  try {
-    const { env } = getRequestContext();
-    const dbEnv = env as { DB?: D1Database };
-    if (!dbEnv.DB) {
-      throw new Error('D1 database binding "DB" not found in environment');
-    }
-    const db = dbEnv.DB;
-    return drizzle(db, { schema });
-  } catch (error) {
-    console.error('Error in getDb:', error);
-    throw error;
-  }
+  return drizzle(client, { schema });
 }
+
+export { getDb };
+export type DB = ReturnType<typeof getDb>;
