@@ -136,6 +136,12 @@ export type UpsertPromptInput = {
   assetId:         number;
   order:           number;
   model:           string;
+  /**
+   * modelTier determines which concrete model version the engine uses at
+   * runtime. One of: 'minimum' | 'medium' | 'maximum'.
+   * Defaults to 'medium' if not supplied (defensive fallback for old callers).
+   */
+  modelTier:       string;
   content:         string;
   outputTo:        string;
   targetStepOrder: number | null;
@@ -151,6 +157,12 @@ export async function upsertPromptStep(
 ): Promise<ActionResult<DBPrompt>> {
   try {
     const db = getDb();
+    // Defensive: normalise tier so DB never receives an unexpected value.
+    const tier = (['minimum', 'medium', 'maximum'] as const).includes(
+      input.modelTier as 'minimum' | 'medium' | 'maximum',
+    )
+      ? input.modelTier
+      : 'medium';
 
     if (input.id) {
       // UPDATE
@@ -158,6 +170,7 @@ export async function upsertPromptStep(
         .update(prompts)
         .set({
           model:           input.model,
+          modelTier:       tier,
           content:         input.content,
           outputTo:        input.outputTo,
           targetStepOrder: input.targetStepOrder,
@@ -176,6 +189,7 @@ export async function upsertPromptStep(
           assetId:         input.assetId,
           order:           input.order,
           model:           input.model,
+          modelTier:       tier,
           content:         input.content,
           outputTo:        input.outputTo,
           targetStepOrder: input.targetStepOrder,

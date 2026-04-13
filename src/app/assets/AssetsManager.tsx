@@ -4,6 +4,12 @@
  * src/app/assets/AssetsManager.tsx  —  Client Component
  *
  * Changes in this revision:
+ *   • ModelTier type added: 'minimum' | 'medium' | 'maximum'
+ *   • PromptStep gains `modelTier` field (persisted via upsertPromptStep).
+ *   • PromptCard: new "Intelligence Tier" 3-segment toggle inserted directly
+ *     below the AI Model selector, styled to match the existing dark/emerald
+ *     palette.
+ *   • dbPromptToStep / handleAddStep / handleUpdateStep wired to modelTier.
  *   • Two separate useTransition hooks:
  *       isPending / startTransition  → CRUD operations (add/delete/update)
  *       isRunning / startEngine      → AI chain execution
@@ -19,6 +25,7 @@ import {
   MessageSquare, Layers, Bot, GripVertical, Globe, TrendingUp,
   Sparkles, X, CheckCircle2, ArrowRightCircle, Copy, ClipboardCheck,
   AlertCircle, Loader2, Activity, CircleCheck, CircleX, ExternalLink,
+  Gauge, BarChart2, Star,
 } from 'lucide-react';
 
 import type { InitialData }           from '@/actions/assets.actions';
@@ -36,11 +43,13 @@ import { runPromptChain } from '@/actions/engine.actions';
 type OutputDest = 'next_step' | 'telegram' | 'blog_draft';
 type AIModel    = 'claude' | 'perplexity' | 'gemini' | 'chatgpt';
 type ExecType   = 'manual' | 'scheduled';
+type ModelTier  = 'minimum' | 'medium' | 'maximum';
 
 type PromptStep = {
   id:              number;
   order:           number;
   model:           AIModel;
+  modelTier:       ModelTier;
   outputTo:        OutputDest;
   targetStepOrder: number | undefined;
   content:         string;
@@ -62,6 +71,45 @@ const OUTPUT_DESTS: { value: OutputDest; label: string; icon: React.ElementType 
   { value: 'blog_draft', label: 'Blog Draft', icon: FileText },
 ];
 
+/**
+ * Intelligence Tier definitions.
+ * activeClass is applied to the active segment button.
+ * description is shown as a hint below the toggle.
+ */
+const MODEL_TIERS: {
+  value:       ModelTier;
+  label:       string;
+  shortLabel:  string;
+  icon:        React.ElementType;
+  activeClass: string;
+  description: string;
+}[] = [
+  {
+    value:       'minimum',
+    label:       'Minimum',
+    shortLabel:  'Min',
+    icon:        Gauge,
+    activeClass: 'bg-zinc-700/90 text-zinc-200 border border-zinc-500/60',
+    description: 'Fast & cheap — Haiku / Flash / GPT-4o mini',
+  },
+  {
+    value:       'medium',
+    label:       'Medium',
+    shortLabel:  'Med',
+    icon:        BarChart2,
+    activeClass: 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40',
+    description: 'Balanced — Sonnet / Pro / GPT-4o',
+  },
+  {
+    value:       'maximum',
+    label:       'Maximum',
+    shortLabel:  'Max',
+    icon:        Star,
+    activeClass: 'bg-violet-500/25 text-violet-300 border border-violet-500/40',
+    description: 'Most capable — Opus / Pro / chatgpt-4o-latest',
+  },
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function dbPromptToStep(p: DBPrompt): PromptStep {
@@ -69,6 +117,7 @@ function dbPromptToStep(p: DBPrompt): PromptStep {
     id:              p.id,
     order:           p.order,
     model:           p.model as AIModel,
+    modelTier:       (p.modelTier ?? 'medium') as ModelTier,
     outputTo:        p.outputTo as OutputDest,
     targetStepOrder: p.targetStepOrder ?? undefined,
     content:         p.content,
@@ -181,7 +230,7 @@ function EngineResultToast({
       {/* Auto-dismiss countdown bar */}
       <div className={`h-0.5 ${result.success ? 'bg-emerald-500/20' : 'bg-red-500/20'}`}>
         <div
-          className={`h-full ${result.success ? 'bg-emerald-500/60' : 'bg-red-500/60'} animate-[shrink_10s_linear_forwards]`}
+          className={`h-full ${result.success ? 'bg-emerald-500/60' : 'bg-red-500/60'}`}
           style={{ transformOrigin: 'left', animation: 'shrink 10s linear forwards' }}
         />
       </div>
@@ -489,6 +538,9 @@ function PromptCard({ step, allSteps, isPending, isRunning, onUpdate, onDelete, 
   const placeholderVar  = `{{step_${step.order}_output}}`;
   const frozen          = isPending || isRunning;
 
+  // Derived: label for the currently active tier
+  const activeTier = MODEL_TIERS.find((t) => t.value === step.modelTier) ?? MODEL_TIERS[1];
+
   function handleOutputChange(dest: OutputDest) {
     if (dest === 'next_step') {
       onUpdate(step.id, { outputTo: dest, targetStepOrder: defaultTarget(step.order, allSteps) });
@@ -597,6 +649,42 @@ function PromptCard({ step, allSteps, isPending, isRunning, onUpdate, onDelete, 
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* ── Intelligence Tier ─────────────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
+                Intelligence Tier
+              </label>
+              {/* Active tier hint badge */}
+              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${activeTier.activeClass}`}>
+                {activeTier.description}
+              </span>
+            </div>
+
+            {/* 3-segment toggle */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-zinc-800/80 rounded-lg border border-zinc-700/50">
+              {MODEL_TIERS.map((tier) => {
+                const TierIcon = tier.icon;
+                const isActive = step.modelTier === tier.value;
+                return (
+                  <button
+                    key={tier.value}
+                    disabled={frozen}
+                    onClick={() => onUpdate(step.id, { modelTier: tier.value })}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-all disabled:pointer-events-none ${
+                      isActive
+                        ? tier.activeClass
+                        : 'text-zinc-600 hover:text-zinc-400 border border-transparent'
+                    }`}
+                  >
+                    <TierIcon size={11} />
+                    {tier.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -728,7 +816,7 @@ function PromptChainColumn({
               {steps.length} step{steps.length !== 1 ? 's' : ''}
             </span>
 
-            {/* ── Run All button ── */}
+            {/* Run All button */}
             <button
               onClick={onRunAll}
               disabled={anyBusy || steps.length === 0}
@@ -747,7 +835,7 @@ function PromptChainColumn({
         )}
       </div>
 
-      {/* ── Pipeline running overlay ── */}
+      {/* Pipeline running overlay */}
       {isRunning && selectedAsset && (
         <div className="mb-4 flex-shrink-0 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
           <div className="flex items-center gap-3">
@@ -755,7 +843,6 @@ function PromptChainColumn({
               <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
                 <Activity size={14} className="text-emerald-400" />
               </div>
-              {/* Pulse ring */}
               <div className="absolute inset-0 rounded-lg border border-emerald-500/40 animate-ping" />
             </div>
             <div className="flex-1 min-w-0">
@@ -766,9 +853,8 @@ function PromptChainColumn({
               </p>
             </div>
           </div>
-          {/* Indeterminate progress bar */}
           <div className="mt-3 h-0.5 bg-zinc-800 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500/60 rounded-full animate-[progress_2s_ease-in-out_infinite]"
+            <div className="h-full bg-emerald-500/60 rounded-full"
               style={{ animation: 'progress 2s ease-in-out infinite' }}
             />
           </div>
@@ -848,8 +934,6 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
   const [engineResult,       setEngineResult]       = useState<ChainRunResult | null>(null);
 
   // ── Two independent transitions ────────────────────────────────────────────
-  // isPending  → CRUD (add/delete/update) — keeps UI responsive during saves
-  // isRunning  → AI chain execution       — can take 30–120 s; blocks Run All only
   const [isPending, startTransition] = useTransition();
   const [isRunning, startEngine]     = useTransition();
 
@@ -936,13 +1020,13 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
     const existing = promptMap[selectedAssetId] ?? [];
     const newOrder = existing.length + 1;
     const tempStep: PromptStep = {
-      id: -Date.now(), order: newOrder, model: 'claude',
+      id: -Date.now(), order: newOrder, model: 'claude', modelTier: 'medium',
       outputTo: 'next_step', targetStepOrder: undefined, content: '', execType: 'manual',
     };
     setPromptMap((prev) => ({ ...prev, [selectedAssetId]: [...existing, tempStep] }));
     startTransition(async () => {
       const result = await upsertPromptStep({
-        assetId: selectedAssetId, order: newOrder, model: 'claude',
+        assetId: selectedAssetId, order: newOrder, model: 'claude', modelTier: 'medium',
         content: '', outputTo: 'next_step', targetStepOrder: null, execType: 'manual',
       });
       if (result.error) {
@@ -980,6 +1064,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
         assetId:         selectedAssetId,
         order:           merged.order,
         model:           merged.model,
+        modelTier:       merged.modelTier,
         content:         merged.content,
         outputTo:        merged.outputTo,
         targetStepOrder: merged.targetStepOrder ?? null,
@@ -1027,7 +1112,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
 
   function handleRunAll() {
     if (!selectedAssetId) return;
-    setEngineResult(null); // clear any previous result
+    setEngineResult(null);
 
     startEngine(async () => {
       const result = await runPromptChain(selectedAssetId);
