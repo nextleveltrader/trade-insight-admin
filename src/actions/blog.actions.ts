@@ -8,18 +8,12 @@ import { revalidatePath } from 'next/cache';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type PublishedPost = {
-  id: number;
-  title: string;
-  content: string;
+// Drizzle থেকে সরাসরি অরিজিনাল ডাটাবেস টাইপ নিয়ে নিচ্ছি
+export type Post = typeof posts.$inferSelect;
+
+// স্ট্যাটাসকে ফিক্স করে দিচ্ছি যাতে "draft" বা "published" ছাড়া অন্য কিছু না হয়
+export type PublishedPost = Omit<Post, 'status'> & {
   status: 'draft' | 'published';
-  assetId: number | null;
-  createdAt: number;
-  category: string | null;
-  tags: string | null;
-  slug: string | null;
-  metaDescription: string | null;
-  metaKeywords: string | null;
 };
 
 export type PostFormData = {
@@ -37,7 +31,7 @@ function getDatabase() {
 
 // ─── Public Blog Actions ──────────────────────────────────────────────────────
 
-export async function getPublishedPosts(): Promise<PublishedPost[]> {
+export async function getPublishedPosts() {
   const db = getDatabase();
   const rows = await db
     .select()
@@ -45,11 +39,10 @@ export async function getPublishedPosts(): Promise<PublishedPost[]> {
     .where(eq(posts.status, 'published'))
     .orderBy(desc(posts.createdAt));
     
-  // ⚡️ FIX: Casting the result to PublishedPost[]
-  return rows as PublishedPost[];
+  return rows as unknown as PublishedPost[];
 }
 
-export async function getPostBySlug(slugOrId: string): Promise<PublishedPost | null> {
+export async function getPostBySlug(slugOrId: string) {
   if (!slugOrId || typeof slugOrId !== 'string') return null;
 
   const db = getDatabase();
@@ -65,21 +58,19 @@ export async function getPostBySlug(slugOrId: string): Promise<PublishedPost | n
     .where(and(lookupCondition, eq(posts.status, 'published')))
     .limit(1);
 
-  // ⚡️ FIX: Casting the result
-  return (row as PublishedPost) ?? null;
+  return (row as unknown as PublishedPost) ?? null;
 }
 
 // ─── Admin CMS Actions (CRUD) ─────────────────────────────────────────────────
 
-export async function getAllPosts(): Promise<PublishedPost[]> {
+export async function getAllPosts() {
   const db = getDatabase();
   const rows = await db.select().from(posts).orderBy(desc(posts.createdAt));
   
-  // ⚡️ FIX: Casting the result
-  return rows as PublishedPost[];
+  return rows as unknown as PublishedPost[];
 }
 
-export async function getPostById(id: string | number): Promise<PublishedPost | undefined> {
+export async function getPostById(id: string | number) {
   const db = getDatabase();
   const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
   
@@ -89,8 +80,7 @@ export async function getPostById(id: string | number): Promise<PublishedPost | 
     .where(eq(posts.id, numericId))
     .limit(1);
     
-  // ⚡️ FIX: Casting the result
-  return (post as PublishedPost) || undefined;
+  return (post as unknown as PublishedPost) || undefined;
 }
 
 export async function createPost(
@@ -105,8 +95,8 @@ export async function createPost(
         slug: data.slug,
         content: data.content,
         status: data.status,
-        createdAt: Date.now(), 
-      })
+        createdAt: new Date(), 
+      } as any)
       .returning({ id: posts.id });
 
     revalidatePath('/posts');
@@ -132,7 +122,7 @@ export async function updatePost(
 
     await db
       .update(posts)
-      .set(data)
+      .set(data as any)
       .where(eq(posts.id, numericId));
 
     revalidatePath('/posts');
