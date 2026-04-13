@@ -1,25 +1,24 @@
 'use server';
 
-import { cookies }            from 'next/headers';
-import { redirect }           from 'next/navigation';
-import { getRequestContext }  from '@cloudflare/next-on-pages';
+import { cookies }           from 'next/headers';
+import { redirect }          from 'next/navigation';
+import { getRequestContext } from '@cloudflare/next-on-pages';
 
 const COOKIE_NAME   = 'admin_session';
 const SESSION_LABEL = 'admin-session-v1';
 
-// ─── Env helper ───────────────────────────────────────────────────────────────
-
 function getAdminPassword(): string | undefined {
+  // প্রথমে Cloudflare runtime try করো
   try {
     const { env } = getRequestContext();
-    return (env as Record<string, string>).ADMIN_PASSWORD;
+    const cfPassword = (env as Record<string, string>).ADMIN_PASSWORD;
+    if (cfPassword) return cfPassword;
   } catch {
-    // Local `next dev` fallback — getRequestContext() throws outside CF runtime
-    return process.env.ADMIN_PASSWORD;
+    // Cloudflare runtime নেই (local next dev)
   }
+  // local dev fallback
+  return process.env.ADMIN_PASSWORD;
 }
-
-// ─── Crypto helpers ───────────────────────────────────────────────────────────
 
 async function deriveSessionToken(password: string): Promise<string> {
   const enc = new TextEncoder();
@@ -34,38 +33,16 @@ async function deriveSessionToken(password: string): Promise<string> {
     .join('');
 }
 
-async function safeCompare(a: string, b: string): Promise<boolean> {
-  const enc  = new TextEncoder();
-  const keyA = await crypto.subtle.importKey('raw', enc.encode(a), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const keyB = await crypto.subtle.importKey('raw', enc.encode(b), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const nonce = crypto.getRandomValues(new Uint8Array(32));
-  const [sigA, sigB] = await Promise.all([
-    crypto.subtle.sign('HMAC', keyA, nonce),
-    crypto.subtle.sign('HMAC', keyB, nonce),
-  ]);
-  const ua = new Uint8Array(sigA);
-  const ub = new Uint8Array(sigB);
-  let diff = 0;
-  for (let i = 0; i < ua.length; i++) diff |= ua[i] ^ ub[i];
-  return diff === 0;
-}
-
-// ─── Auth actions ─────────────────────────────────────────────────────────────
-
 export async function login(password: string): Promise<{ error?: string }> {
   try {
     const adminPassword = getAdminPassword();
 
     if (!adminPassword) {
-      console.error('[auth] ADMIN_PASSWORD is not set in environment.');
-      return { error: 'Server misconfiguration. Contact administrator.' };
+      console.error('[auth] ADMIN_PASSWORD not set.');
+      return { error: 'Server misconfiguration. ADMIN_PASSWORD is not set.' };
     }
 
-    // Simple string comparison (timing-safe comparison not needed for password input)
-    const match = password === adminPassword;
-    
-    if (!match) {
-      console.warn('[auth] Password mismatch');
+    if (password !== adminPassword) {
       return { error: 'Incorrect password.' };
     }
 
@@ -77,14 +54,13 @@ export async function login(password: string): Promise<{ error?: string }> {
       secure   : process.env.NODE_ENV === 'production',
       sameSite : 'lax',
       path     : '/',
-      maxAge   : 60 * 60 * 24 * 7, // 7 days
+      maxAge   : 60 * 60 * 24 * 7,
     });
 
-    console.log('[auth] Login successful, session created');
     return {};
   } catch (err) {
     console.error('[auth] login error:', err);
-    return { error: 'An unexpected error occurred.' };
+    return { error: `Unexpected error: ${String(err)}` };
   }
 }
 
@@ -101,8 +77,14 @@ export async function checkAuth(): Promise<void> {
 
   if (!adminPassword || !session) redirect('/login');
 
-  const expectedToken = await deriveSessionToken(adminPassword);
-  const valid         = await safeCompare(session, expectedToken);
+  const expectedToken = await deriveSessionToken(adminPassword!);
 
-  if (!valid) redirect('/login');
+  // timing-safe compare
+  const enc  = new TextEncoder();
+  const a    = enc.encode(session);
+  const b    = enc.encode(expectedToken);
+  if (a.length !== b.length) redirect('/login');
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  if (diff !== 0) redirect('/login');
 }
