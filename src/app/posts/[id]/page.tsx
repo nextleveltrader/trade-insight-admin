@@ -9,7 +9,7 @@
  *  3. Passes the post data down to <PostEditorClient>, which handles all
  *     client-side interactions (rich editor, save, delete).
  */
-
+export const runtime = 'edge';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getPostById } from '@/actions/blog.actions';
