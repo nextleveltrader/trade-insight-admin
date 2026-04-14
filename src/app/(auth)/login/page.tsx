@@ -15,7 +15,7 @@
 // Auth.js error codes are mapped to human-readable messages via AUTH_ERRORS.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState }     from 'react';
+import { useState, Suspense }     from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn }       from 'next-auth/react';
 import Link             from 'next/link';
@@ -77,7 +77,7 @@ function OrDivider() {
 
 // ─── Page Component ───────────────────────────────────────────────────────────
 
-export default function LoginPage() {
+function LoginForm() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
 
@@ -309,5 +309,17 @@ export default function LoginPage() {
         <Link href="#" className="underline underline-offset-2 hover:text-zinc-500">Privacy Policy</Link>.
       </p>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-sky-500" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
