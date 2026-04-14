@@ -1,29 +1,39 @@
 // src/app/(user)/layout.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — User Dashboard Layout Wrapper  v7
+// TradeInsight Daily — User Dashboard Layout Wrapper  v8
 //
-// v7 changes vs v6:
-//   [CRIT] SIDEBAR WIDTH MATH FIX — right-side cutoff on desktop
-//     • <main>: replaced `w-full md:ml-[220px]` with
-//       `w-full md:w-[calc(100%-220px)] md:ml-[220px]`.
+// v8 changes vs v7:
 //
-//       Root cause: `w-full` resolves to 100vw on the block axis. Adding
-//       `md:ml-[220px]` on top pushes the right edge to 100vw + 220px,
-//       exceeding the viewport and cutting off the rightmost grid columns.
+//   [NEW] MOBILE TOP HEADER
+//     • Import + render <MobileHeader /> — fixed h-14 bar, block md:hidden.
+//     • <main> gains `pt-14 md:pt-0` to push page content below the header.
 //
-//       Fix: at md+ the explicit width is clamped to exactly
-//       `100% − 220px`, so left-edge + width = 100vw precisely.
-//       On mobile (< md) `w-full` remains correct because there is no
-//       sidebar offset.
+//       Why pt-14 and not pt-[56px]?
+//         h-14 = 4rem = 56px in Tailwind's default scale. Using `pt-14`
+//         keeps the value in the design token system rather than an
+//         arbitrary pixel value, and stays consistent if the base font-size
+//         changes. The result is identical: 56px clearance on mobile.
 //
-//   [v6 KEPT] Ultra-wide max-w-[1800px] expansion and xl:px-8 padding.
+//       Why md:pt-0?
+//         On md+ the desktop sidebar takes over; there is no fixed top bar,
+//         so padding-top must reset to zero to avoid a spurious gap.
+//
+//   [UPDATED] TOP ACCENT LINE SCOPE
+//     • The layout's decorative gradient top accent line is now `md:block hidden`
+//       (desktop-only). On mobile MobileHeader renders its own matching accent
+//       line, so the layout version would double-render at z-30 and bleed
+//       through the glassmorphism header. Removing it on mobile is the clean fix.
+//
+//   [v7 KEPT] Sidebar width math fix: md:w-[calc(100%-220px)] + md:ml-[220px].
+//   [v6 KEPT] max-w-[1800px] expansion and xl:px-8 padding.
 //   [v5 KEPT] All overflow-x-hidden guards on shell div and <main>.
-//   Fonts, animations, sidebar offset, mobile pb — no regressions.
+//   Fonts, animations, mobile pb-[72px], page-enter fade — no regressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Metadata } from "next";
-import { UserSidebar } from "@/components/user/UserSidebar";
-import { MobileNav }   from "@/components/user/MobileNav";
+import { UserSidebar }  from "@/components/user/UserSidebar";
+import { MobileNav }    from "@/components/user/MobileNav";
+import { MobileHeader } from "@/components/user/MobileHeader";   // ← v8
 
 export const metadata: Metadata = {
   title:       "Dashboard — Trade Insight Daily",
@@ -89,19 +99,39 @@ export default function UserLayout({
        */}
       <div className="min-h-screen w-full overflow-x-hidden bg-zinc-950 text-white antialiased selection:bg-sky-500/30 selection:text-sky-200">
 
-        {/* ── Desktop Sidebar ────────────────────────────────────────────── */}
+        {/* ── [v8] Mobile Top Header — fixed, block md:hidden ─────────────── */}
+        {/*
+         * Rendered first in the DOM so it paints on top of everything else
+         * at z-50. The desktop sidebar is z-40; MobileHeader is z-50.
+         * On md+ the component returns nothing (block md:hidden internally),
+         * so there is zero performance cost on desktop.
+         */}
+        <MobileHeader />
+
+        {/* ── Desktop Sidebar — hidden md:flex, z-40 ───────────────────────── */}
         <UserSidebar />
 
-        {/* ── Mobile Bottom Nav ─────────────────────────────────────────── */}
+        {/* ── Mobile Bottom Nav — fixed bottom, md:hidden ───────────────────── */}
         <MobileNav />
 
-        {/* ── Main Content Area ─────────────────────────────────────────── */}
+        {/* ── Main Content Area ─────────────────────────────────────────────── */}
         {/*
+         * SPACING BUDGET on mobile:
+         *   pt-14  → 56px clearance for the fixed MobileHeader (v8)
+         *   pb-[72px] → 72px clearance for the fixed MobileNav (unchanged)
+         *   Inner wrapper py-6 → 24px top/bottom inside padding
+         *
+         * The content therefore starts at: 56px (header) + 24px (inner pt) = 80px
+         * from the top of the viewport — comfortable, no overlap.
+         *
+         * SPACING BUDGET on desktop (md+):
+         *   pt-0   → no fixed header; sidebar is a side panel, not top bar
+         *   pb-0   → no bottom nav
+         *   Inner wrapper py-8 → 32px top/bottom inside padding
+         *
          * [CRIT v7] w-full on mobile; md:w-[calc(100%-220px)] + md:ml-[220px]
          * on desktop. The calc() ensures left-edge (220px) + width (100%-220px)
          * = exactly 100vw — no right-side overflow, no cut-off grid columns.
-         * pb-[72px] keeps content above the mobile bottom nav on small screens.
-         * min-h-screen fills the background on short pages.
          *
          * NOTE: overflow-y is intentionally NOT set — native viewport scroll
          * is preserved for iOS momentum-scrolling.
@@ -110,13 +140,21 @@ export default function UserLayout({
           className="
             relative
             w-full overflow-x-hidden
-            md:w-[calc(100%-220px)] md:ml-[220px]
+            pt-14 md:pt-0
             pb-[72px] md:pb-0
+            md:w-[calc(100%-220px)] md:ml-[220px]
             min-h-screen
           "
         >
-          {/* Top accent line */}
-          <div className="pointer-events-none fixed inset-x-0 top-0 z-30 h-px bg-gradient-to-r from-transparent via-sky-500/20 to-transparent md:left-[220px]" />
+          {/*
+           * [v8] Desktop-only top accent line.
+           * Removed from mobile because MobileHeader renders its own matching
+           * accent line internally. Keeping both would double the gradient and
+           * bleed visually through the glassmorphism backdrop.
+           *
+           * md:left-[220px] keeps it starting at the sidebar's right edge.
+           */}
+          <div className="pointer-events-none fixed inset-x-0 top-0 z-30 hidden h-px bg-gradient-to-r from-transparent via-sky-500/20 to-transparent md:block md:left-[220px]" />
 
           {/*
            * [v6] Inner wrapper:
@@ -130,6 +168,7 @@ export default function UserLayout({
             {children}
           </div>
         </main>
+
       </div>
     </>
   );
