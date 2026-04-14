@@ -2,34 +2,28 @@
 
 // src/app/(user)/dashboard/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed  v5  "Native Mobile List View"
+// TradeInsight Daily — Market Feed  v6  "Native Separator Pattern"
 //
-// v5 changes vs v4 (business logic & mock data UNCHANGED):
+// v6 changes vs v5 (business logic & mock data UNCHANGED):
 //
-//   [MOB] INSIGHT FEED — EDGE-TO-EDGE LIST VIEW
-//     • Grid container on mobile: `-mx-4 divide-y divide-zinc-800/60`
-//       bleeds to screen edges and uses CSS divide for separators — no cards.
-//     • `sm:mx-0 sm:divide-y-0 sm:grid sm:grid-cols-2 sm:gap-4` restores the
-//       floating card grid on desktop. lg:grid-cols-3 unchanged.
-//     • InsightCard: split into two layouts inside one <article>:
-//         – Mobile  (`sm:hidden`): flat list-item with px-4 py-3.5. All asset
-//           data, badge, direction badge on a SINGLE compressed row.
-//         – Desktop (`hidden sm:flex`): original gradient-header card layout,
-//           pixel-identical to v4.
-//     • All hover transforms restricted to `sm:hover:` — no layout-shift on
-//       mobile taps.
+//   [MOB] INSIGHT FEED — NATIVE APP SEPARATOR PATTERN
+//     • Removed `divide-y divide-zinc-800/60` from the grid container.
+//       The parent-level divider was too faint against zinc-950 in dark mode.
+//     • Each mobile list item now carries its own separation chrome:
+//         – `bg-zinc-900/30`         → lifts the row off the page bg
+//         – `border-t border-zinc-800/40` → crisp top edge (contrast anchor)
+//         – `border-b-[6px] border-b-zinc-950` → thick "gap" between rows,
+//           identical to the separator gap pattern used by Twitter/X, YouTube
+//           and Binance. The zinc-950 matches the page body exactly so the
+//           gap reads as dead space — clear, unambiguous item boundary.
+//         – `py-4`                   → slightly more vertical breathing room
+//           (was py-3.5)
+//     • Grid container simplified to:
+//       `-mx-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3`
+//       No divide classes needed anymore.
 //
-//   [MOB] STATS BAR — BORDERLESS METRIC ROW
-//     • Individual stat cards: `sm:rounded-xl sm:border sm:bg-zinc-900/40`
-//       (border/bg/rounded on desktop only). On mobile they render as clean
-//       floating metric pairs — icon + value + label, no card chrome.
-//
-//   [MOB] HEADER COMPRESSION
-//     • "Published at 06:15 AM UTC" subtitle: `hidden sm:block` — removed on
-//       mobile to save vertical space. Date + live badge row retained.
-//
-//   [KEEP] Desktop (`sm+`) layout, card styling, freemium gates, lock banners,
-//          confidence bars, historical strips — all pixel-identical to v4.
+//   [KEEP] All v5 changes (stats bar, header compression, desktop card layout,
+//          freemium gates) — pixel-identical on sm+.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -277,11 +271,15 @@ function PastProBadge() {
 //
 // Renders TWO distinct layouts in one <article>:
 //
-//   Mobile  (sm:hidden)  — flat edge-to-edge list item.
-//     • No card chrome (no border, no rounded, no bg).
-//     • px-4 py-3.5 padding — aligns with the layout's px-4 gutter.
-//     • All key data on one compressed header row.
-//     • Dividers come from the parent container's `divide-y`.
+//   Mobile  (sm:hidden)  — edge-to-edge list item with native separator pattern.
+//     • bg-zinc-900/30          → subtle row lift off the zinc-950 page body.
+//     • border-t zinc-800/40    → crisp top edge acting as a contrast anchor.
+//     • border-b-[6px] zinc-950 → thick "gutter gap" separator — identical to
+//       the pattern used by Twitter/X, YouTube, and Binance. Because zinc-950
+//       matches the page background, the thick border reads as empty space,
+//       giving a clear, unambiguous item boundary without boxing the row.
+//     • px-4 py-4               → full-bleed horizontal, comfortable vertical.
+//     • All key data on one compressed header row (asset · category · direction).
 //
 //   Desktop (hidden sm:flex) — original floating card from v4.
 //     • Gradient header, body with lock banner, footer.
@@ -308,7 +306,14 @@ function InsightCard({ insight }: { insight: Insight }) {
       {/* ══════════════════════════════════════════════════════════════════
           MOBILE LIST ITEM  — hidden on sm+
           ══════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-col px-4 py-3.5 sm:hidden">
+      <div
+        className="
+          flex flex-col px-4 py-4 sm:hidden
+          bg-zinc-900/30
+          border-t border-zinc-800/40
+          border-b-[6px] border-b-zinc-950
+        "
+      >
 
         {/* Row 1 ── Asset · Category · [Past Pro] · Direction (single line) */}
         <div className="flex items-center gap-1.5">
@@ -722,13 +727,12 @@ export default function MarketFeedPage() {
 
         {/* ── [E] INSIGHT FEED ──────────────────────────────────────────── */}
         {/*
-         * MOBILE  : `-mx-4` bleeds to screen edges. `divide-y divide-zinc-800/60`
-         *           draws thin separators between items — no card borders.
-         *           Default block layout stacks items vertically.
+         * MOBILE  : `-mx-4` bleeds to screen edges. Each InsightCard carries
+         *           its own bg + border-t + thick border-b-[6px] border-b-zinc-950
+         *           separator — no divide-y needed on the container.
          *
-         * DESKTOP : `sm:mx-0` resets the bleed. `sm:divide-y-0` removes
-         *           dividers. `sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3`
-         *           restores the floating card grid.
+         * DESKTOP : `sm:mx-0` resets the bleed. `sm:grid sm:grid-cols-2 sm:gap-4`
+         *           restores the floating card grid. lg:grid-cols-3 unchanged.
          */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
@@ -739,9 +743,8 @@ export default function MarketFeedPage() {
         ) : (
           <div
             className="
-              -mx-4 divide-y divide-zinc-800/60
-              sm:mx-0 sm:divide-y-0
-              sm:grid sm:grid-cols-2 sm:gap-4
+              -mx-4
+              sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4
               lg:grid-cols-3
             "
           >
