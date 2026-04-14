@@ -1,8 +1,0 @@
-name = "trade-insight-admin"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
-
-[[d1_databases]]
-binding = "DB"
-database_name = "trade-db"
-database_id = "1155bbd5-e478-4281-a19d-bc34ea8b602f"

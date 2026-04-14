@@ -2,19 +2,28 @@
 
 // src/components/user/UserSidebar.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Premium Desktop Sidebar
+// TradeInsight Daily — Premium Desktop Sidebar  v2
 //
-// Design notes:
-//   • Glassmorphism shell: bg-zinc-950/80 + backdrop-blur-xl + border-r
-//   • Logo mirrors the landing page exactly (Activity icon + brand wordmark)
-//   • Nav items: icon + label + active state via usePathname
-//     Active = left-border glow + icon colour pop + bg tint
-//   • Pro Trial badge: amber/gold gradient card at the bottom
-//   • Settings link: subtle zinc icon row above the trial badge
-//   • Width: 220 px on lg, 64 px (icon-only) on md — full on lg
+// v2 changes vs v1:
+//
+//   [REPLACED] Bottom zone (hardcoded amber "Pro Trial" card + progress bar
+//              + Settings link) has been removed entirely.
+//              It is replaced by <ProfileWidget />, which reads the real
+//              Auth.js session via useSession() and renders:
+//                • User identity card (avatar initials / Google photo, name, email)
+//                • Live status card (Pro / Trial Active with real daysLeft / Expired)
+//                • Sign Out button → signOut({ callbackUrl: "/login" })
+//
+//   [KEPT] All v1 structural code: glassmorphism shell, logo, market pulse
+//          strip, nav items with per-accent active states, width/position.
+//
+// SEPARATION OF CONCERNS:
+//   UserSidebar owns layout and navigation.
+//   ProfileWidget owns all session-dependent rendering.
+//   This keeps each component focused and independently testable.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import Link from "next/link";
+import Link          from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
@@ -22,22 +31,18 @@ import {
   BrainCircuit,
   Calendar,
   Bookmark,
-  Settings,
-  Sparkles,
   ChevronRight,
   TrendingUp,
-  Lock,
 } from "lucide-react";
+import { ProfileWidget } from "@/components/user/ProfileWidget";
 
 // ─── NAV ITEMS ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   {
-    label:    "Market Feed",
-    href:     "/feed",
-    icon:     LayoutDashboard,
-    accent:   "sky",
-    // Tailwind classes keyed by accent colour
+    label:        "Market Feed",
+    href:         "/feed",
+    icon:         LayoutDashboard,
     activeBg:     "bg-sky-500/[0.08]",
     activeBorder: "border-sky-500/70",
     activeIcon:   "text-sky-400",
@@ -47,10 +52,9 @@ const NAV_ITEMS = [
     hoverText:    "hover:text-zinc-200",
   },
   {
-    label:    "ICT Setups",
-    href:     "/ict",
-    icon:     BrainCircuit,
-    accent:   "violet",
+    label:        "ICT Setups",
+    href:         "/ict",
+    icon:         BrainCircuit,
     activeBg:     "bg-violet-500/[0.08]",
     activeBorder: "border-violet-500/70",
     activeIcon:   "text-violet-400",
@@ -60,10 +64,9 @@ const NAV_ITEMS = [
     hoverText:    "hover:text-zinc-200",
   },
   {
-    label:    "Smart Calendar",
-    href:     "/calendar",
-    icon:     Calendar,
-    accent:   "emerald",
+    label:        "Smart Calendar",
+    href:         "/calendar",
+    icon:         Calendar,
     activeBg:     "bg-emerald-500/[0.08]",
     activeBorder: "border-emerald-500/70",
     activeIcon:   "text-emerald-400",
@@ -73,10 +76,9 @@ const NAV_ITEMS = [
     hoverText:    "hover:text-zinc-200",
   },
   {
-    label:    "Saved Insights",
-    href:     "/saved",
-    icon:     Bookmark,
-    accent:   "amber",
+    label:        "Saved Insights",
+    href:         "/saved",
+    icon:         Bookmark,
     activeBg:     "bg-amber-500/[0.08]",
     activeBorder: "border-amber-500/70",
     activeIcon:   "text-amber-400",
@@ -85,7 +87,7 @@ const NAV_ITEMS = [
     hoverBg:      "hover:bg-amber-500/[0.04]",
     hoverText:    "hover:text-zinc-200",
   },
-];
+] as const;
 
 // ─── SIDEBAR COMPONENT ────────────────────────────────────────────────────────
 
@@ -96,18 +98,17 @@ export function UserSidebar() {
     <aside
       className="
         fixed inset-y-0 left-0 z-40
-        flex w-[220px] flex-col
         hidden md:flex w-[220px] flex-col
         border-r border-zinc-800/60
         bg-zinc-950/80 backdrop-blur-xl
       "
     >
-      {/* ── Top accent line (mirrors landing page hero) ─────────────────── */}
+      {/* ── Top accent line ───────────────────────────────────────────────── */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-500/40 to-transparent" />
 
       {/* ── Logo ──────────────────────────────────────────────────────────── */}
       <div className="flex h-14 shrink-0 items-center border-b border-zinc-800/60 px-4">
-        <Link href="/feed" className="flex items-center gap-2.5 group">
+        <Link href="/feed" className="group flex items-center gap-2.5">
           <div
             className="
               relative flex h-7 w-7 shrink-0 items-center justify-center
@@ -149,7 +150,7 @@ export function UserSidebar() {
       {/* ── Nav items ─────────────────────────────────────────────────────── */}
       <nav className="mt-1.5 flex flex-1 flex-col gap-0.5 px-2">
         {NAV_ITEMS.map((item) => {
-          const Icon    = item.icon;
+          const Icon     = item.icon;
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
 
           return (
@@ -174,6 +175,7 @@ export function UserSidebar() {
                     rounded-full ${item.activeDot}
                     shadow-[0_0_8px_2px] shadow-current
                   `}
+                  aria-hidden="true"
                 />
               )}
 
@@ -201,6 +203,7 @@ export function UserSidebar() {
                     opacity-0 transition-opacity duration-150
                     group-hover:opacity-100
                   "
+                  aria-hidden="true"
                 />
               )}
             </Link>
@@ -208,76 +211,15 @@ export function UserSidebar() {
         })}
       </nav>
 
-      {/* ── Bottom zone ───────────────────────────────────────────────────── */}
-      <div className="shrink-0 space-y-2 border-t border-zinc-800/60 p-3">
-
-        {/* Settings link */}
-        <Link
-          href="/settings"
-          className="
-            group flex items-center gap-3 rounded-xl border border-transparent
-            px-3 py-2.5 text-zinc-500
-            transition-all duration-150
-            hover:border-zinc-800/60 hover:bg-zinc-900/60 hover:text-zinc-300
-          "
-        >
-          <Settings
-            size={15}
-            strokeWidth={1.75}
-            className="shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-400"
-          />
-          <span className="text-[13px] font-medium">Settings</span>
-        </Link>
-
-        {/* Pro Trial badge */}
-        <div
-          className="
-            relative overflow-hidden rounded-xl
-            border border-amber-500/20
-            bg-gradient-to-br from-amber-500/[0.07] via-amber-600/[0.04] to-transparent
-            p-3.5
-          "
-        >
-          {/* Ambient glow */}
-          <div className="pointer-events-none absolute -right-4 -top-4 h-16 w-16 rounded-full bg-amber-500/15 blur-2xl" />
-
-          <div className="relative">
-            <div className="mb-2 flex items-center gap-1.5">
-              <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15">
-                <Sparkles size={10} className="text-amber-400" />
-              </div>
-              <span className="text-[11px] font-bold text-amber-400">Pro Trial</span>
-            </div>
-
-            {/* Progress bar: 14/30 days used */}
-            <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-zinc-800">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
-                style={{ width: "47%" }}   /* 14/30 ≈ 47 % */
-              />
-            </div>
-
-            <p className="mb-2.5 text-[10px] font-light leading-relaxed text-zinc-500">
-              <span className="font-semibold text-amber-400/80">14 days</span> left on your free trial.
-            </p>
-
-            <Link
-              href="/upgrade"
-              className="
-                flex w-full items-center justify-center gap-1.5
-                rounded-lg bg-amber-500/15
-                border border-amber-500/25
-                px-3 py-1.5
-                text-[11px] font-semibold text-amber-400
-                transition-all duration-150
-                hover:bg-amber-500/25 hover:border-amber-500/40
-              "
-            >
-              <Lock size={9} />
-              Upgrade to Pro
-            </Link>
-          </div>
-        </div>
+      {/* ── Bottom zone — live session data via ProfileWidget ─────────────── */}
+      {/*
+       * ProfileWidget handles its own loading skeleton, so there is no flash
+       * of unstyled content here. The border-t separator and p-3 padding
+       * match the dimensions of the old hardcoded card exactly, keeping the
+       * sidebar height stable between loading and loaded states.
+       */}
+      <div className="shrink-0 border-t border-zinc-800/60 p-3">
+        <ProfileWidget />
       </div>
     </aside>
   );
