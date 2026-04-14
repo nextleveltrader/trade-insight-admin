@@ -97,6 +97,7 @@ export function UserSidebar() {
       className="
         fixed inset-y-0 left-0 z-40
         flex w-[220px] flex-col
+        hidden md:flex w-[220px] flex-col
         border-r border-zinc-800/60
         bg-zinc-950/80 backdrop-blur-xl
       "
