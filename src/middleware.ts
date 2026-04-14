@@ -4,10 +4,13 @@ import { NextResponse } from "next/server";
 
 export default auth((req) => {
   const { nextUrl } = req;
-  const isLoggedIn = !!req.auth; // Auth.js ইউজার লগইন চেক
+  
+  // 🔴 STRICT CHECK: শুধুমাত্র req.auth নয়, আমরা চেক করছি req.auth.user আছে কি না।
+  // প্রোডাকশনে (Vercel) ফাঁকা অবজেক্টের কারণে যে রিডাইরেক্ট বাগ হয়, এটি তা ফিক্স করবে।
+  const isLoggedIn = !!req.auth?.user; 
   const user = req.auth?.user;
 
-  // ─── ১. অ্যাডমিন প্যানেল লজিক (আপনার আগের কাস্টম কুকি সিস্টেম) ──────────
+  // ─── ১. অ্যাডমিন প্যানেল লজিক ───────────────────────────────────────────
   if (nextUrl.pathname.startsWith('/admin')) {
     const isAdminLoginPage = nextUrl.pathname === '/admin/login';
     const hasAdminCookie = req.cookies.has('admin_session');
@@ -23,29 +26,32 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // ─── ২. ইউজার অ্যাপ লজিক (Auth.js + Freemium Logic) ──────────────────
-  
-  // প্রটেক্টড রুটস (যেখানে লগইন ছাড়া ঢোকা যাবে না)
+  // ─── ২. ইউজার অ্যাপ লজিক ──────────────────────────────────────────────
   const isAuthPage = nextUrl.pathname === '/login' || nextUrl.pathname === '/register';
-  const protectedRoutes = ['/feed', '/calendar', '/saved', '/insights'];
-  const isUserProtectedRoute = protectedRoutes.some(path => nextUrl.pathname.startsWith(path));
+  const isProtectedRoute = ['/feed', '/calendar', '/saved', '/insights'].some(path => 
+    nextUrl.pathname.startsWith(path)
+  );
 
-  // লগইন না করে প্রটেক্টড পেজে গেলে লগইন পেজে পাঠিয়ে দিন
-  if (isUserProtectedRoute && !isLoggedIn) {
+  // যদি ইউজার লগইন/রেজিস্টার পেজে যায়:
+  if (isAuthPage) {
+    if (isLoggedIn) {
+      // লগইন করা থাকলে ফিডে পাঠাও
+      return NextResponse.redirect(new URL('/feed', req.url));
+    }
+    // লগইন করা না থাকলে পেজটি দেখতে দাও!
+    return NextResponse.next(); 
+  }
+
+  // যদি লগইন না করে প্রটেক্টেড পেজে (যেমন /feed) যেতে চায়:
+  if (isProtectedRoute && !isLoggedIn) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  // লগইন করা ইউজার লগইন পেজে যেতে চাইলে ফিডে পাঠান
-  if (isAuthPage && isLoggedIn) {
-    return NextResponse.redirect(new URL('/feed', req.url));
-  }
-
-  // [ভবিষ্যতের জন্য]: এখানে ট্রায়াল শেষ হয়েছে কি না তা চেক করে 
-  // আপনি চাইলে ইউজারকে /pricing পেজেও পাঠাতে পারেন।
+  // [ভবিষ্যতের জন্য ট্রায়াল চেকিং লজিক]
   /*
   const now = Date.now();
   if (isLoggedIn && !user?.isPro && user?.trialEndsAt && now > user.trialEndsAt) {
-     if (isUserProtectedRoute && nextUrl.pathname !== '/pricing') {
+     if (isProtectedRoute && nextUrl.pathname !== '/pricing') {
         return NextResponse.redirect(new URL('/pricing', req.url));
      }
   }
