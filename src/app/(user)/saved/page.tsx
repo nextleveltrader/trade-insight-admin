@@ -2,12 +2,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // TradeInsight Daily — Saved Insights
 //
-// Server Component. Fetches saved post IDs from D1, then filters the shared
-// INSIGHTS mock array for UI rendering. Grid layout is pixel-identical to
-// feed/page.tsx (fluid responsive, mobile edge-to-edge list view).
+// Server Component. Calls auth() to read the real session, derives
+// `hasAccess` from isPro / trialEndsAt, then fetches saved post IDs
+// from Turso and filters the mock INSIGHTS array for UI rendering.
 //
-// When real DB posts are live, replace the INSIGHTS filter step with a
-// Drizzle JOIN: `db.select().from(posts).where(inArray(posts.id, savedIds))`.
+// When real DB posts are live, replace the INSIGHTS filter step with:
+//   db.select().from(posts).where(inArray(posts.id, savedIds))
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -22,19 +22,12 @@ import {
   BarChart2,
   BookOpen,
   CheckCircle,
-  Zap,
-  Globe,
-  Bitcoin,
-  LineChart,
-  Gem,
   History,
   Bookmark,
   ArrowLeft,
 } from "lucide-react";
+import { auth }            from "@/auth";
 import { getSavedPostIds } from "@/actions/save-insight";
-
-// ─── SUBSCRIPTION GATE ────────────────────────────────────────────────────────
-const HAS_ACTIVE_SUBSCRIPTION = false;
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +51,6 @@ interface Insight {
 }
 
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
-// Mirrors feed/page.tsx exactly. Replace with a DB fetch once posts are live.
 
 const INSIGHTS: Insight[] = [
   {
@@ -151,8 +143,8 @@ const CATEGORY_STYLE: Record<Category, string> = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-function isCardLocked(i: Insight) {
-  return i.isProOnly && !i.isHistorical && !HAS_ACTIVE_SUBSCRIPTION;
+function isCardLocked(i: Insight, hasAccess: boolean) {
+  return i.isProOnly && !i.isHistorical && !hasAccess;
 }
 
 // ─── MICRO-COMPONENTS ─────────────────────────────────────────────────────────
@@ -161,29 +153,18 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
   return (
     <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${badgeCls}`}>
-      <Icon size={10} strokeWidth={2.5} />
-      {direction}
+      <Icon size={10} strokeWidth={2.5} />{direction}
     </span>
   );
 }
 
-function ConfidenceBar({
-  value,
-  barCls,
-  blurred,
-}: {
-  value: number;
-  barCls: string;
-  blurred: boolean;
-}) {
+function ConfidenceBar({ value, barCls, blurred }: { value: number; barCls: string; blurred: boolean }) {
   return (
     <div className={`flex items-center gap-2 transition-all ${blurred ? "blur-sm select-none" : ""}`}>
       <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-zinc-800">
         <div className={`h-full rounded-full ${barCls}`} style={{ width: `${value}%` }} />
       </div>
-      <span className="w-6 text-right font-mono text-[9px] font-medium text-zinc-600">
-        {value}%
-      </span>
+      <span className="w-6 text-right font-mono text-[9px] font-medium text-zinc-600">{value}%</span>
     </div>
   );
 }
@@ -198,17 +179,11 @@ function CardLockBanner() {
         </div>
         <div>
           <p className="text-[10.5px] font-bold leading-none text-white">Pro Insight</p>
-          <p className="mt-0.5 text-[9.5px] font-light leading-tight text-zinc-500">
-            Upgrade to unlock today's ICT bias
-          </p>
+          <p className="mt-0.5 text-[9.5px] font-light leading-tight text-zinc-500">Upgrade to unlock today's ICT bias</p>
         </div>
       </div>
-      <Link
-        href="/upgrade"
-        className="relative flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9.5px] font-bold text-amber-400 transition-all hover:bg-amber-500/20"
-      >
-        <Sparkles size={7} />
-        Unlock
+      <Link href="/pricing" className="relative flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9.5px] font-bold text-amber-400 transition-all hover:bg-amber-500/20">
+        <Sparkles size={7} />Unlock
       </Link>
     </div>
   );
@@ -217,72 +192,45 @@ function CardLockBanner() {
 function PastProBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-400">
-      <History size={8} strokeWidth={2.5} />
-      Past Pro
+      <History size={8} strokeWidth={2.5} />Past Pro
     </span>
   );
 }
 
-// ─── INSIGHT CARD (pixel-identical to feed/page.tsx) ─────────────────────────
-
-function InsightCard({ insight }: { insight: Insight }) {
+function InsightCard({ insight, hasAccess }: { insight: Insight; hasAccess: boolean }) {
   const dir    = DIRECTION_MAP[insight.direction];
   const catCls = CATEGORY_STYLE[insight.category];
-  const locked = isCardLocked(insight);
+  const locked = isCardLocked(insight, hasAccess);
 
   return (
     <article
-      className={`
-        group flex flex-col
-        sm:overflow-hidden sm:rounded-2xl
-        sm:border sm:border-zinc-800/70 sm:bg-zinc-900/40
-        sm:transition-all sm:duration-200
-        sm:hover:-translate-y-0.5 sm:hover:border-zinc-700/60
-        sm:hover:bg-zinc-900/70 sm:hover:shadow-xl
-        ${dir.glowCls} ${dir.borderHover}
-      `}
+      className={`group flex flex-col sm:overflow-hidden sm:rounded-2xl sm:border sm:border-zinc-800/70 sm:bg-zinc-900/40 sm:transition-all sm:duration-200 sm:hover:-translate-y-0.5 sm:hover:border-zinc-700/60 sm:hover:bg-zinc-900/70 sm:hover:shadow-xl ${dir.glowCls} ${dir.borderHover}`}
     >
-
       {/* ── MOBILE LIST ITEM ── */}
       <div className="flex flex-col px-4 py-4 sm:hidden bg-zinc-900/30 border-t border-zinc-800/40 border-b-[6px] border-b-zinc-950">
         <div className="flex items-center gap-1.5">
-          <h3 className="shrink-0 text-[13.5px] font-bold tracking-tight text-white">
-            {insight.asset}
-          </h3>
-          <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide ${catCls}`}>
-            {insight.category}
-          </span>
+          <h3 className="shrink-0 text-[13.5px] font-bold tracking-tight text-white">{insight.asset}</h3>
+          <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide ${catCls}`}>{insight.category}</span>
           {insight.isHistorical && <span className="shrink-0"><PastProBadge /></span>}
-          <span className="ml-auto shrink-0">
-            <DirectionBadge direction={insight.direction} />
-          </span>
+          <span className="ml-auto shrink-0"><DirectionBadge direction={insight.direction} /></span>
         </div>
-
-        <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600">
-          {insight.biasType}
-        </p>
-
+        <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600">{insight.biasType}</p>
         {locked && <div className="mt-2.5"><CardLockBanner /></div>}
-
         <p className={`mt-2 text-[11.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
           {insight.summary}
         </p>
-
         {insight.isHistorical && (
           <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5">
             <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
             <p className="text-[9.5px] font-light leading-relaxed text-zinc-500">
-              Published <span className="font-medium text-zinc-400">{insight.publishedAt}</span>
-              {" "}· Now free.
+              Published <span className="font-medium text-zinc-400">{insight.publishedAt}</span>{" "}· Now free.
             </p>
           </div>
         )}
-
         <div className="mt-2.5">
           <p className="mb-1 text-[8px] font-semibold uppercase tracking-widest text-zinc-700">Confidence</p>
           <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
         </div>
-
         <div className="mt-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[9.5px] text-zinc-700">
             <span className="flex items-center gap-1"><Clock size={8} />{insight.timeAgo}</span>
@@ -290,7 +238,7 @@ function InsightCard({ insight }: { insight: Insight }) {
             <span className="flex items-center gap-1"><BookOpen size={8} />{insight.readMin} min</span>
           </div>
           {locked ? (
-            <Link href="/upgrade" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
+            <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
               <Lock size={8} />Upgrade
             </Link>
           ) : (
@@ -307,45 +255,30 @@ function InsightCard({ insight }: { insight: Insight }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
               <h3 className="text-sm font-bold tracking-tight text-white">{insight.asset}</h3>
-              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>
-                {insight.category}
-              </span>
+              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>{insight.category}</span>
               {insight.isHistorical && <PastProBadge />}
             </div>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
-              {insight.biasType}
-            </p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">{insight.biasType}</p>
           </div>
-          <div className="shrink-0 pt-0.5">
-            <DirectionBadge direction={insight.direction} />
-          </div>
+          <div className="shrink-0 pt-0.5"><DirectionBadge direction={insight.direction} /></div>
         </div>
-
         <div className="flex flex-1 flex-col px-4 py-4">
           {locked && <CardLockBanner />}
-          <p className={`flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
-            {insight.summary}
-          </p>
-          <p className={`mt-2 text-[11px] font-light leading-relaxed text-zinc-600 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
-            {insight.detail}
-          </p>
-
+          <p className={`flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>{insight.summary}</p>
+          <p className={`mt-2 text-[11px] font-light leading-relaxed text-zinc-600 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>{insight.detail}</p>
           {insight.isHistorical && (
             <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-1.5">
               <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
               <p className="text-[10px] font-light leading-relaxed text-zinc-500">
-                Published on <span className="font-medium text-zinc-400">{insight.publishedAt}</span>
-                {" "}· Now free as historical proof.
+                Published on <span className="font-medium text-zinc-400">{insight.publishedAt}</span>{" "}· Now free as historical proof.
               </p>
             </div>
           )}
-
           <div className="mt-4">
             <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-700">Bias Confidence</p>
             <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
           </div>
         </div>
-
         <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
           <div className="flex items-center gap-3 text-[10px] text-zinc-700">
             <span className="flex items-center gap-1"><Clock size={8} />{insight.timeAgo}</span>
@@ -353,57 +286,34 @@ function InsightCard({ insight }: { insight: Insight }) {
             <span className="flex items-center gap-1"><BookOpen size={8} />{insight.readMin} min</span>
           </div>
           {locked ? (
-            <Link href="/upgrade" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
+            <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
               <Lock size={8} />Upgrade
             </Link>
           ) : (
-            <Link
-              href={`/insights/${insight.id}`}
-              className="flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5 text-[10px] font-semibold text-sky-400 transition-all duration-150 group-hover:border-sky-500/30 group-hover:bg-sky-500/10"
-            >
-              Read
-              <ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+            <Link href={`/insights/${insight.id}`} className="flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5 text-[10px] font-semibold text-sky-400 transition-all duration-150 group-hover:border-sky-500/30 group-hover:bg-sky-500/10">
+              Read<ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
             </Link>
           )}
         </div>
       </div>
-
     </article>
   );
 }
 
-// ─── EMPTY STATE ──────────────────────────────────────────────────────────────
-
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/20 py-20 text-center">
-      {/* Layered icon treatment */}
       <div className="relative mb-5">
         <div className="absolute inset-0 rounded-full bg-zinc-800/60 blur-xl" />
         <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-800/80 bg-zinc-900/60">
           <Bookmark size={22} className="text-zinc-700" strokeWidth={1.5} />
         </div>
       </div>
-
-      <h3 className="mb-1 text-[14px] font-semibold text-zinc-400">
-        No saved insights yet
-      </h3>
+      <h3 className="mb-1 text-[14px] font-semibold text-zinc-400">No saved insights yet</h3>
       <p className="mb-6 max-w-xs text-[11.5px] font-light leading-relaxed text-zinc-600">
-        Bookmark any insight from the Market Feed and it will appear here for
-        quick reference.
+        Bookmark any insight from the Market Feed and it will appear here for quick reference.
       </p>
-
-      <Link
-        href="/feed"
-        className="
-          group flex items-center gap-2
-          rounded-xl border border-sky-500/30 bg-sky-500/10
-          px-4 py-2.5 text-[11.5px] font-semibold text-sky-400
-          transition-all duration-150
-          hover:bg-sky-500/18 hover:border-sky-500/50
-          hover:shadow-[0_0_18px_rgba(14,165,233,0.14)]
-        "
-      >
+      <Link href="/feed" className="group flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-[11.5px] font-semibold text-sky-400 transition-all duration-150 hover:bg-sky-500/18 hover:border-sky-500/50 hover:shadow-[0_0_18px_rgba(14,165,233,0.14)]">
         Browse Market Feed
         <ArrowRight size={12} className="transition-transform duration-150 group-hover:translate-x-0.5" />
       </Link>
@@ -414,74 +324,61 @@ function EmptyState() {
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 export default async function SavedInsightsPage() {
-  // ── Fetch saved IDs from D1 ───────────────────────────────────────────────
+  // ── Read real session ─────────────────────────────────────────────────────
+  const session     = await auth();
+  const isPro       = session?.user?.isPro       ?? false;
+  const trialEndsAt = session?.user?.trialEndsAt ?? null;
+
+  const hasAccess =
+    isPro ||
+    (trialEndsAt !== null && Date.now() < trialEndsAt);
+
+  // ── Fetch saved IDs from Turso ────────────────────────────────────────────
   const savedIds = await getSavedPostIds();
 
   // ── Filter mock insights ──────────────────────────────────────────────────
-  // When real DB posts exist, replace this with a Drizzle JOIN:
-  //   const saved = await db.select().from(posts).where(inArray(posts.id, savedIds));
+  // TODO Sprint 2: Replace with:
+  //   db.select().from(posts).where(inArray(posts.id, savedIds))
   const savedInsights = INSIGHTS.filter((i) => savedIds.includes(i.id));
 
   return (
     <div className="relative w-full overflow-x-hidden">
-
-      {/* Ambient glow */}
       <div className="pointer-events-none fixed left-1/2 top-[30%] h-[500px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500/[0.03] blur-[120px]" />
 
       <div className="relative">
-
-        {/* ── HEADER ────────────────────────────────────────────────────── */}
         <header className="mb-6 sm:mb-8">
-          <Link
-            href="/feed"
-            className="mb-4 inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-zinc-600 transition-colors hover:text-zinc-300"
-          >
-            <ArrowLeft size={11} strokeWidth={2} />
-            Market Feed
+          <Link href="/feed" className="mb-4 inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-zinc-600 transition-colors hover:text-zinc-300">
+            <ArrowLeft size={11} strokeWidth={2} />Market Feed
           </Link>
-
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl">
-                Saved{" "}
-                <span className="text-amber-400">Insights</span>
+                Saved <span className="text-amber-400">Insights</span>
               </h1>
               <p className="mt-0.5 text-[11px] font-light text-zinc-600 sm:mt-1">
                 {savedInsights.length > 0
                   ? `${savedInsights.length} bookmark${savedInsights.length !== 1 ? "s" : ""} — your personal reading list.`
-                  : "Your bookmarked insights appear here."}
+                  : "Your bookmarked insights appear here."
+                }
               </p>
             </div>
-
-            {/* Count pill */}
             {savedInsights.length > 0 && (
               <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/[0.07] px-3 py-1.5 text-[10.5px] font-semibold text-amber-400">
-                <Bookmark size={10} strokeWidth={2} />
-                {savedInsights.length}
+                <Bookmark size={10} strokeWidth={2} />{savedInsights.length}
               </div>
             )}
           </div>
         </header>
 
-        {/* ── FEED ──────────────────────────────────────────────────────── */}
         {savedInsights.length === 0 ? (
           <EmptyState />
         ) : (
-          <div
-            className="
-              -mx-4
-              sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4
-              lg:grid-cols-3
-              xl:grid-cols-4 xl:gap-5
-              2xl:grid-cols-5
-            "
-          >
+          <div className="-mx-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5 2xl:grid-cols-5">
             {savedInsights.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} />
+              <InsightCard key={insight.id} insight={insight} hasAccess={hasAccess} />
             ))}
           </div>
         )}
-
       </div>
     </div>
   );

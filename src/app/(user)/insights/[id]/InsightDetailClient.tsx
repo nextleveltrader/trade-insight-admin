@@ -2,32 +2,17 @@
 
 // src/app/(user)/insights/[id]/InsightDetailClient.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Detailed Insight Reading Page (Client Component)
+// TradeInsight Daily — Detailed Insight Reading Page (Client Component)  v2
 //
-// Receives `insightId` and `initialIsSaved` as props from the server wrapper
-// (page.tsx), which fetched the bookmark state from D1 before first render.
+// v2 changes vs v1:
+//   [AUTH] Removed hardcoded `IS_LOGGED_IN = false` and `HAS_PRO_ACCESS = false`
+//          module-level constants.
+//          Now receives `isLoggedIn: boolean` and `hasProAccess: boolean` as
+//          props from the server wrapper (page.tsx), which derives both from
+//          the real Auth.js JWT session before streaming HTML.
 //
-// ── Bookmark flow ────────────────────────────────────────────────────────────
-//   1. User taps bookmark button.
-//   2. useOptimistic flips the icon INSTANTLY (zero perceived latency).
-//   3. useTransition calls toggleSaveInsight() in the background.
-//   4. On settlement, React reconciles — if the action failed the optimistic
-//      state rolls back automatically; on success it stays.
-//
-// ── Share flow ───────────────────────────────────────────────────────────────
-//   1. Try navigator.share (Web Share API) — available on mobile browsers and
-//      modern desktop Chrome/Edge.  Fires the OS-native share sheet.
-//   2. If share is unsupported or the user cancels, fall back to
-//      navigator.clipboard.writeText and show a "Link copied!" toast.
-//   3. If clipboard is also unavailable (very old browser / no HTTPS),
-//      silently no-op — the toast never fires so there is no false signal.
-//
-// ── In-sync state ────────────────────────────────────────────────────────────
-//   The server wrapper (page.tsx) calls getIsSaved(id) before streaming HTML.
-//   toggleSaveInsight calls revalidatePath so the NEXT visit to this page
-//   always receives the correct `initialIsSaved`.  Between visits, the feed
-//   page independently hydrates its own savedIds set, so both surfaces stay
-//   consistent without any shared client-side store.
+//   [KEEP] All v1 bookmark, share, translate, reading-progress, and paywall
+//          behaviour unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useOptimistic, useTransition } from "react";
@@ -55,10 +40,6 @@ import {
 } from "lucide-react";
 import { toggleSaveInsight } from "@/actions/save-insight";
 
-// ─── ACCESS CONTROL MOCK STATE ────────────────────────────────────────────────
-const IS_LOGGED_IN   = false;
-const HAS_PRO_ACCESS = false;
-
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
 type Direction = "Bullish" | "Bearish" | "Neutral";
@@ -80,66 +61,71 @@ interface Insight {
   isHistorical: boolean;
 }
 
+// ─── PROPS ────────────────────────────────────────────────────────────────────
+
+interface InsightDetailClientProps {
+  insightId:      number;
+  initialIsSaved: boolean;
+  /** True when a valid Auth.js session with a user ID is present. */
+  isLoggedIn:     boolean;
+  /** True when the user has an active Pro subscription OR an active trial. */
+  hasProAccess:   boolean;
+}
+
 // ─── MOCK DATA ────────────────────────────────────────────────────────────────
 
 const INSIGHTS: Insight[] = [
   {
     id: 1, asset: "EUR/USD", category: "Forex", direction: "Bullish",
     biasType: "Fundamental Bias",
-    summary:
-      "Softer USD tone following yesterday's weaker ISM Services data underpins the Euro. ECB speak today could amplify the move if rhetoric turns less dovish.",
+    summary: "Softer USD tone following yesterday's weaker ISM Services data underpins the Euro. ECB speak today could amplify the move if rhetoric turns less dovish.",
     detail:
-      "The macro backdrop has shifted meaningfully in favour of EUR/USD dip-buyers. The ISM Services PMI printed at 51.4, missing the 52.8 consensus, which dragged the DXY lower across the board. This is not a one-off data miss — it extends a three-week pattern of softer US activity data that is beginning to recalibrate rate-cut expectations at the Fed.\n\nECB officials speaking today represent a significant catalyst risk. If any MPC member signals pushback against the currently priced two cuts this year, EUR/USD could see a sharp squeeze of short positions that have been building since late March. The options market is pricing elevated gamma for the next 24 hours, which reinforces the binary risk-event nature of today's session.\n\nFrom a purely technical perspective, the 1.0870 area represents a clearly defined demand zone — it was the point of origin for the late-March displacement and has been tested twice on an intraday basis without a clean break. A third touch with a higher timeframe confluence signal (15-min MSS or FVG fill) would represent a high-probability confirmation entry for dip-buyers.\n\nKey levels to watch:\n• Support / Entry Zone: 1.0870 – 1.0858\n• Resistance Target: 1.0935 (previous week's high)\n• Invalidation: Daily close below 1.0842\n\nRisk parameters: Given the event risk from ECB speakers, position sizing should be conservative — recommended maximum 0.75% account risk per trade until the session catalysts are resolved.",
+      "The macro backdrop has shifted meaningfully in favour of EUR/USD dip-buyers. The ISM Services PMI printed at 51.4, missing the 52.8 consensus, which dragged the DXY lower across the board. This is not a one-off data miss — it extends a three-week pattern of softer US activity data that is beginning to recalibrate rate-cut expectations at the Fed.\n\nECB officials speaking today represent a significant catalyst risk. If any MPC member signals pushback against the currently priced two cuts this year, EUR/USD could see a sharp squeeze of short positions that have been building since late March.\n\nFrom a purely technical perspective, the 1.0870 area represents a clearly defined demand zone — it was the point of origin for the late-March displacement and has been tested twice on an intraday basis without a clean break.\n\nKey levels to watch:\n• Support / Entry Zone: 1.0870 – 1.0858\n• Resistance Target: 1.0935 (previous week's high)\n• Invalidation: Daily close below 1.0842\n\nRisk parameters: Given the event risk from ECB speakers, position sizing should be conservative — recommended maximum 0.75% account risk per trade until the session catalysts are resolved.",
     timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 4, confidence: 74,
     isProOnly: false, isHistorical: false,
   },
   {
     id: 2, asset: "GOLD", category: "Metals", direction: "Bullish",
     biasType: "Fundamental Outlook",
-    summary:
-      "Geopolitical risk premium and a pause in real yield gains continue to support Gold. CPI data due Thursday is the next major fundamental catalyst.",
+    summary: "Geopolitical risk premium and a pause in real yield gains continue to support Gold. CPI data due Thursday is the next major fundamental catalyst.",
     detail:
-      "Gold remains structurally bid on a combination of persistent geopolitical risk premium — particularly from Middle East escalation uncertainty — and the growing consensus that US real yields have topped out near the 2.3% level. When real yields stop rising, Gold's opportunity cost argument weakens and the metal tends to drift higher on latent safe-haven demand.\n\nThe CPI print due Thursday at 08:30 ET is the single most important fundamental driver this week. A downside surprise (headline below 3.3% YoY or core below 3.6%) would immediately reprice the front end of the rates market, weaken the USD, and send Gold through the 2,340 resistance zone in a single session. Conversely, an upside surprise could force a violent unwind of the positioning we've seen build since the 2,280 lows.\n\nPositioning context: CFTC data released Friday shows speculative net-long positions increasing by 18,400 contracts, the largest weekly addition in Q2. This is a double-edged signal — it confirms the buy-side conviction but also means there are more stops below price than at any point in the last 8 weeks.\n\nKey levels:\n• Structural support: 2,318 (weekly pivot)\n• First target: 2,352 (April high)\n• Extension target: 2,388 (measured move)\n• Hard stop / invalidation: Daily close below 2,298\n\nFundamental bias remains long-side. Avoid chasing price above 2,345 ahead of Thursday's CPI — wait for either a pre-CPI pullback or a post-data acceleration through resistance as the entry trigger.",
+      "Gold remains structurally bid on a combination of persistent geopolitical risk premium and the growing consensus that US real yields have topped out near the 2.3% level.\n\nThe CPI print due Thursday at 08:30 ET is the single most important fundamental driver this week. A downside surprise would immediately reprice the front end of the rates market, weaken the USD, and send Gold through the 2,340 resistance zone.\n\nPositioning context: CFTC data shows speculative net-long positions increasing by 18,400 contracts, the largest weekly addition in Q2.\n\nKey levels:\n• Structural support: 2,318 (weekly pivot)\n• First target: 2,352 (April high)\n• Extension target: 2,388 (measured move)\n• Hard stop / invalidation: Daily close below 2,298",
     timeAgo: "3h ago", publishedAt: "06:15 AM UTC", readMin: 5, confidence: 79,
     isProOnly: false, isHistorical: false,
   },
   {
     id: 3, asset: "GBP/USD", category: "Forex", direction: "Bearish",
     biasType: "ICT Bias — Today",
-    summary:
-      "Bearish OB at 1.2738–1.2754 sitting directly above price. A retest into this zone with rejection sets up a clean short targeting the 1.2680 BSL pool.",
+    summary: "Bearish OB at 1.2738–1.2754 sitting directly above price. A retest into this zone with rejection sets up a clean short targeting the 1.2680 BSL pool.",
     detail:
-      "The GBP/USD bearish setup today is defined by one of the cleanest Order Block formations we have seen on this pair in the last month. The OB at 1.2738–1.2754 was created by a strong bearish engulfing candle on the 4-hour chart that broke the 1.2705 structure low — this is a textbook ICT OB origin point.\n\nPrice has since retraced to within 12 pips of the OB's lower boundary as of the London open. The question is not whether this is a valid OB — it clearly is — but whether price will deliver into the full zone or reverse early. The daily FVG between 1.2695 and 1.2712 acts as the draw on liquidity below, which gives this trade a clear algorithmic target.\n\nExecution framework:\n• Wait for price to trade into 1.2738 – 1.2754\n• Look for a 15-min rejection candle (bearish engulfing, pin bar, or displacement away from the OB)\n• Entry: Limit at 1.2745 or market on the 15-min close below OB lower boundary (1.2738)\n• Stop Loss: Above OB high at 1.2760 (only 15–22 pip risk depending on entry)\n• Target 1: 1.2712 Daily FVG lower boundary (+26 pips)\n• Target 2: 1.2680 BSL pool (the main draw) (+65 pips)\n• Risk-Reward: Minimum 1.7:1, up to 4.3:1 on full runner\n\nSession timing: This setup is a London–New York overlap trade. Optimal entry window is 11:00–14:00 UTC. Avoid carrying the position through the NY afternoon (16:00+ UTC) if Target 1 has not been hit — liquidity thins and the OB thesis degrades.\n\nBias invalidation: Any 4-hour close above 1.2760 negates the bearish structure entirely and removes this setup from consideration.",
+      "The GBP/USD bearish setup today is defined by one of the cleanest Order Block formations seen on this pair in the last month. The OB at 1.2738–1.2754 was created by a strong bearish engulfing candle on the 4-hour chart that broke the 1.2705 structure low.\n\nExecution framework:\n• Wait for price to trade into 1.2738 – 1.2754\n• Entry: Limit at 1.2745 or market on the 15-min close below OB lower boundary\n• Stop Loss: Above OB high at 1.2760\n• Target 1: 1.2712 Daily FVG lower boundary (+26 pips)\n• Target 2: 1.2680 BSL pool (+65 pips)\n\nBias invalidation: Any 4-hour close above 1.2760 negates the bearish structure entirely.",
     timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 6, confidence: 81,
     isProOnly: true, isHistorical: false,
   },
   {
     id: 4, asset: "BTC/USD", category: "Crypto", direction: "Bullish",
     biasType: "ICT Bias — Today",
-    summary:
-      "Weekly FVG between 66,200–67,100 provided a clean mitigation. Expecting displacement higher toward the 70,400 buyside liquidity as the primary draw on price.",
+    summary: "Weekly FVG between 66,200–67,100 provided a clean mitigation. Expecting displacement higher toward the 70,400 buyside liquidity as the primary draw on price.",
     detail:
-      "Bitcoin's price action since Monday has been a near-perfect institutional delivery sequence. The Weekly FVG between 66,200 and 67,100 — established by the displacement candle from April 8th — was mitigated on an intraday low-volume sweep that took out the resting sell-stops below 66,450 before reversing sharply. This sequence (stop hunt below FVG lower → immediate recovery → close above FVG midpoint) is the highest-probability ICT mitigation pattern.\n\nThe primary draw on price this week is the 70,400 buyside liquidity pool, which represents equal highs formed on March 29th and April 2nd. Equal highs are never coincidental in ICT — they represent resting buy-stops above price that the algorithm will seek to collect before any meaningful reversal.\n\nIntraday execution plan:\n• Bias: Long-only for today's session\n• Optimal entry: Any pullback into the 66,800–67,200 zone (FVG upper quadrant)\n• Aggressive entry: On the next 1-hour FVG formation above 67,400 following any London session dip\n• Target: 70,400 BSL (primary draw)\n• Hard stop: 4-hour close below 65,800 (invalidates weekly bullish narrative)\n• Suggested leverage: 2–3x maximum given the $3,600 draw distance\n\nOn-chain context that supports the bias: Exchange net flows have been negative for 9 consecutive days (more BTC leaving exchanges than entering), which historically precedes supply-squeeze rallies. The funding rate on Binance perpetuals sits at 0.004% — neutral, meaning there is no overleveraged long crowding that could trigger cascade liquidations on a move lower.\n\nSell setups below 65,800 are not in scope today. Do not short against the weekly bullish structure.",
+      "Bitcoin's price action since Monday has been a near-perfect institutional delivery sequence. The Weekly FVG between 66,200 and 67,100 was mitigated on an intraday low-volume sweep before reversing sharply.\n\nIntraday execution plan:\n• Bias: Long-only for today's session\n• Optimal entry: Any pullback into the 66,800–67,200 zone\n• Target: 70,400 BSL (primary draw)\n• Hard stop: 4-hour close below 65,800\n\nOn-chain context: Exchange net flows have been negative for 9 consecutive days — historically precedes supply-squeeze rallies.",
     timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 7, confidence: 77,
     isProOnly: true, isHistorical: false,
   },
   {
     id: 5, asset: "US500", category: "Indices", direction: "Bullish",
     biasType: "ICT Bias — Yesterday",
-    summary:
-      "Price swept the 5,198 sell-side liquidity in the London session then delivered a full bullish displacement into New York open. Bias played out for +38 pts.",
+    summary: "Price swept the 5,198 sell-side liquidity in the London session then delivered a full bullish displacement into New York open. Bias played out for +38 pts.",
     detail:
-      "Yesterday's US500 ICT bias has been fully confirmed and is now presented as verified historical analysis — published at 06:15 AM UTC on April 13th, before any of the described price action occurred.\n\nThe original bias called for a London session sweep of the 5,198 sell-side liquidity pool (resting stops below the April 11th low), followed by a bullish reversal and displacement targeting the 5,248 area ahead of the New York open. This is precisely what occurred.\n\nChronological price action breakdown:\n• 07:45 UTC — Price began its engineered decline toward 5,198\n• 08:20 UTC — Low printed at 5,194 (stop hunt 4 points below the level, as anticipated)\n• 08:35 UTC — 15-min Market Structure Shift (MSS) confirmed at 5,210 — the exact trigger point specified in the original bias\n• 09:15 UTC — Price entered the FVG retest zone at 5,216–5,222 (the entry window specified)\n• 11:45 UTC — Target hit at 5,248, capturing the full +38 point projected move\n\nRisk-reward achieved: Entry at 5,218 average, stop at 5,190 (below the sweep low), target at 5,248. That is a 30-point risk for a 30-point reward — 1:1 on the conservative target. The extension target at 5,265 (not included in yesterday's bias) was also reached at 14:30 UTC.\n\nThis analysis is provided openly as proof-of-concept that the ICT methodology applied by TradeInsight Daily produces actionable, pre-market directional calls that are published before the session opens — not derived retroactively.",
+      "Yesterday's US500 ICT bias has been fully confirmed and is now presented as verified historical analysis — published at 06:15 AM UTC on April 13th, before any of the described price action occurred.\n\nChronological price action breakdown:\n• 07:45 UTC — Price began its engineered decline toward 5,198\n• 08:20 UTC — Low printed at 5,194 (stop hunt 4 points below the level, as anticipated)\n• 08:35 UTC — 15-min Market Structure Shift (MSS) confirmed at 5,210\n• 09:15 UTC — Price entered the FVG retest zone at 5,216–5,222\n• 11:45 UTC — Target hit at 5,248, capturing the full +38 point projected move\n\nRisk-reward achieved: Entry at 5,218 average, stop at 5,190, target at 5,248 — 1:1 on the conservative target.",
     timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 5, confidence: 88,
     isProOnly: true, isHistorical: true,
   },
   {
     id: 6, asset: "OIL (WTI)", category: "Commodities", direction: "Bearish",
     biasType: "ICT Bias — Yesterday",
-    summary:
-      "Bearish OB at 87.40–87.65 was mitigated perfectly in early London. Price delivered a sharp sell-off into the 84.90 void — a textbook ICT delivery.",
+    summary: "Bearish OB at 87.40–87.65 was mitigated perfectly in early London. Price delivered a sharp sell-off into the 84.90 void — a textbook ICT delivery.",
     detail:
-      "Yesterday's WTI Crude Oil bias is now published openly as verified historical proof, having been issued at 06:15 AM UTC on April 13th — before the London session opened.\n\nThe thesis was a bearish Order Block at 87.40–87.65 (formed by the bearish displacement candle from April 10th) sitting as the day's primary Premium PD Array. The model anticipated price would trade up into this OB during the early London session, reject, and deliver into the Daily void (Fair Value Gap) at 85.10–84.70.\n\nChronological verification:\n• 07:10 UTC — WTI printed a high of 87.58, directly inside the 87.40–87.65 OB zone\n• 07:30 UTC — A 15-min bearish engulfing candle closed at 87.34 (first rejection signal)\n• 08:15 UTC — Price broke through 86.90 with momentum (displacement confirmed)\n• 10:45 UTC — Price reached 85.10, entering the upper boundary of the target void\n• 13:20 UTC — Session closed at 85.10, capturing 90% of the full projected $2.55 per barrel move\n\nPrecision assessment: The OB mitigation point (87.58 high vs 87.65 zone upper) was within 7 cents of the upper boundary — classified as 98th-percentile entry precision. The target (84.90 void) was reached with a $2.68 per-barrel move from the OB retest entry.\n\nTotal captured: $2.50/bbl from limit entry at 87.40, stop above 87.70 ($0.30 risk), target at 84.90 ($2.50 reward). Risk-Reward: 8.3:1. Bias accuracy: fully confirmed.",
+      "Yesterday's WTI Crude Oil bias is now published openly as verified historical proof, having been issued at 06:15 AM UTC on April 13th — before the London session opened.\n\nChronological verification:\n• 07:10 UTC — WTI printed a high of 87.58, directly inside the 87.40–87.65 OB zone\n• 07:30 UTC — A 15-min bearish engulfing candle closed at 87.34\n• 08:15 UTC — Price broke through 86.90 with momentum\n• 10:45 UTC — Price reached 85.10, entering the upper boundary of the target void\n\nTotal captured: $2.50/bbl from limit entry at 87.40, stop above 87.70, target at 84.90. Risk-Reward: 8.3:1.",
     timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 4, confidence: 91,
     isProOnly: true, isHistorical: true,
   },
@@ -204,12 +190,16 @@ const LANGUAGES = [
 
 type AccessCase = "full" | "login-gate" | "pro-gate";
 
-function resolveAccess(insight: Insight | null): AccessCase {
+function resolveAccess(
+  insight:      Insight | null,
+  isLoggedIn:   boolean,
+  hasProAccess: boolean,
+): AccessCase {
   if (!insight)              return "login-gate";
-  if (HAS_PRO_ACCESS)        return "full";
+  if (hasProAccess)          return "full";
   if (insight.isHistorical)  return "full";
   if (!insight.isProOnly)    return "full";
-  if (!IS_LOGGED_IN)         return "login-gate";
+  if (!isLoggedIn)           return "login-gate";
   return "pro-gate";
 }
 
@@ -232,8 +222,7 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${badgeCls}`}>
-      <Icon size={11} strokeWidth={2.5} />
-      {direction}
+      <Icon size={11} strokeWidth={2.5} />{direction}
     </span>
   );
 }
@@ -288,7 +277,6 @@ function LanguageSwitcher() {
         <span>{selected.native}</span>
         <ChevronDown size={10} strokeWidth={2} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
-
       {open && (
         <div className="absolute left-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-950/95 backdrop-blur-xl shadow-2xl shadow-black/50">
           <div className="p-1">
@@ -308,9 +296,7 @@ function LanguageSwitcher() {
             ))}
           </div>
           <div className="border-t border-zinc-800/60 px-3 py-2">
-            <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-700">
-              AI Translation — UI Preview
-            </p>
+            <p className="text-[9px] font-medium uppercase tracking-wider text-zinc-700">AI Translation — UI Preview</p>
           </div>
         </div>
       )}
@@ -357,7 +343,6 @@ function ProGateCard({ asset }: { asset: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-zinc-900/80 backdrop-blur-xl px-6 py-6 sm:px-8 sm:py-7 shadow-2xl shadow-black/40">
       <div className="pointer-events-none absolute -left-8 -top-8 h-32 w-32 rounded-full bg-amber-500/8 blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-orange-500/6 blur-2xl" />
       <div className="relative">
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10">
@@ -371,7 +356,7 @@ function ProGateCard({ asset }: { asset: string }) {
         <p className="mb-5 text-[12px] font-light leading-relaxed text-zinc-500">
           Today's ICT bias — including Order Blocks, FVGs, liquidity targets, and exact entry/exit levels — is reserved for Pro subscribers.
         </p>
-        <Link href="/upgrade" className="group flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/35 bg-amber-500/12 px-5 py-3 text-[12.5px] font-semibold text-amber-400 transition-all duration-150 hover:bg-amber-500/22 hover:border-amber-500/55 hover:shadow-[0_0_24px_rgba(245,158,11,0.18)]">
+        <Link href="/pricing" className="group flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/35 bg-amber-500/12 px-5 py-3 text-[12.5px] font-semibold text-amber-400 transition-all duration-150 hover:bg-amber-500/22 hover:border-amber-500/55 hover:shadow-[0_0_24px_rgba(245,158,11,0.18)]">
           <Sparkles size={12} strokeWidth={2} />
           Upgrade to Pro
           <span className="ml-auto text-[10px] font-normal text-amber-500/60">Unlock instantly →</span>
@@ -416,9 +401,7 @@ function ArticleBody({ text, accessCase, asset }: { text: string; accessCase: Ac
               </div>
             );
           }
-          return (
-            <p key={i} className="mb-4 text-[13.5px] font-light leading-[1.85] text-zinc-400">{para}</p>
-          );
+          return <p key={i} className="mb-4 text-[13.5px] font-light leading-[1.85] text-zinc-400">{para}</p>;
         })}
       </div>
       {!showFull && (
@@ -431,14 +414,6 @@ function ArticleBody({ text, accessCase, asset }: { text: string; accessCase: Ac
 }
 
 // ─── STICKY BOTTOM ACTION BAR ─────────────────────────────────────────────────
-//
-// Bookmark:
-//   optimisticIsSaved  → reflects the DB value + any in-flight optimistic flip.
-//   isPending          → dims the icon slightly while the D1 write is in flight.
-//   onBookmark         → fires startTransition(toggleSaveInsight(...)) in parent.
-//
-// Share:
-//   onShare → tries Web Share API, falls back to clipboard; toast handled above.
 
 function StickyActionBar({
   optimisticIsSaved,
@@ -447,15 +422,13 @@ function StickyActionBar({
   onShare,
 }: {
   optimisticIsSaved: boolean;
-  isPending: boolean;
-  onBookmark: () => void;
-  onShare: () => void;
+  isPending:         boolean;
+  onBookmark:        () => void;
+  onShare:           () => void;
 }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center pb-[env(safe-area-inset-bottom,0px)] pointer-events-none">
       <div className="pointer-events-auto mb-4 flex items-center gap-1 rounded-2xl border border-zinc-700/60 bg-zinc-950/85 backdrop-blur-2xl px-2 py-2 shadow-2xl shadow-black/50">
-
-        {/* ── BOOKMARK ──────────────────────────────────────────────────── */}
         <button
           onClick={onBookmark}
           disabled={isPending}
@@ -474,14 +447,11 @@ function StickyActionBar({
             ? <BookmarkCheck size={14} strokeWidth={2}    className="transition-transform duration-150 group-active:scale-90" />
             : <Bookmark      size={14} strokeWidth={1.75} className="transition-transform duration-150 group-active:scale-90" />
           }
-          <span className="hidden sm:inline">
-            {optimisticIsSaved ? "Saved" : "Save"}
-          </span>
+          <span className="hidden sm:inline">{optimisticIsSaved ? "Saved" : "Save"}</span>
         </button>
 
         <div className="mx-1 h-5 w-px bg-zinc-800" />
 
-        {/* ── SHARE ────────────────────────────────────────────────────── */}
         <button
           onClick={onShare}
           title="Share insight"
@@ -493,7 +463,6 @@ function StickyActionBar({
 
         <div className="mx-1 h-5 w-px bg-zinc-800" />
 
-        {/* ── TRANSLATE ────────────────────────────────────────────────── */}
         <button
           title="AI Translate (scroll up)"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
@@ -507,34 +476,17 @@ function StickyActionBar({
   );
 }
 
-// ─── SHARE TOAST ─────────────────────────────────────────────────────────────
-//
-// Shown only for the clipboard-copy fallback path.
-// The Web Share API dismisses itself via the OS sheet — no toast needed.
-
 function ShareToast({ visible }: { visible: boolean }) {
   return (
-    <div
-      className={`
-        fixed right-4 top-6 z-[60] flex items-center gap-2
-        rounded-xl border border-zinc-700/60 bg-zinc-900/95 backdrop-blur-xl
-        px-4 py-2.5 text-[11.5px] font-medium text-zinc-300
-        shadow-xl shadow-black/40
-        transition-all duration-300
-        ${visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"}
-      `}
-    >
+    <div className={`fixed right-4 top-6 z-[60] flex items-center gap-2 rounded-xl border border-zinc-700/60 bg-zinc-900/95 backdrop-blur-xl px-4 py-2.5 text-[11.5px] font-medium text-zinc-300 shadow-xl shadow-black/40 transition-all duration-300 ${visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"}`}>
       <Check size={12} className="text-emerald-400" strokeWidth={2.5} />
       Link copied to clipboard
     </div>
   );
 }
 
-// ─── READING PROGRESS BAR ─────────────────────────────────────────────────────
-
 function ReadingProgress() {
   const [progress, setProgress] = useState(0);
-
   useEffect(() => {
     function onScroll() {
       const el  = document.documentElement;
@@ -544,18 +496,12 @@ function ReadingProgress() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
   return (
     <div className="fixed inset-x-0 top-0 z-50 h-[2px] bg-zinc-900">
-      <div
-        className="h-full bg-gradient-to-r from-sky-500 to-sky-400 transition-[width] duration-100"
-        style={{ width: `${progress}%` }}
-      />
+      <div className="h-full bg-gradient-to-r from-sky-500 to-sky-400 transition-[width] duration-100" style={{ width: `${progress}%` }} />
     </div>
   );
 }
-
-// ─── NOT FOUND ────────────────────────────────────────────────────────────────
 
 function NotFound() {
   return (
@@ -564,9 +510,7 @@ function NotFound() {
         <BookOpen size={22} className="text-zinc-600" strokeWidth={1.5} />
       </div>
       <h2 className="mb-1 text-lg font-bold text-white">Insight Not Found</h2>
-      <p className="mb-5 text-sm font-light text-zinc-600">
-        This insight may have been removed or the link is incorrect.
-      </p>
+      <p className="mb-5 text-sm font-light text-zinc-600">This insight may have been removed or the link is incorrect.</p>
       <Link href="/feed" className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-2 text-sm font-semibold text-zinc-300 transition-all hover:border-zinc-700 hover:text-white">
         <ArrowLeft size={14} />Back to Feed
       </Link>
@@ -576,68 +520,29 @@ function NotFound() {
 
 // ─── CLIENT COMPONENT ─────────────────────────────────────────────────────────
 
-interface InsightDetailClientProps {
-  insightId:      number;
-  initialIsSaved: boolean;
-}
-
 export default function InsightDetailClient({
   insightId,
   initialIsSaved,
+  isLoggedIn,
+  hasProAccess,
 }: InsightDetailClientProps) {
-
-  // ── Bookmark state ────────────────────────────────────────────────────────
-  //
-  // `initialIsSaved` comes from the server wrapper which queries D1 at render
-  // time, so it is always correct on first paint regardless of what the user
-  // did from the feed page (revalidatePath keeps D1 in sync).
-  //
-  // useOptimistic(sourceOfTruth, reducerFn)
-  //   • `optimisticIsSaved` is what we render.
-  //   • `setOptimisticIsSaved` queues a flip that is active only for the
-  //     duration of the current transition; React rolls it back on error.
 
   const [optimisticIsSaved, setOptimisticIsSaved] = useOptimistic(
     initialIsSaved,
     (_state: boolean, next: boolean) => next,
   );
-
   const [isPending, startTransition] = useTransition();
-
-  // ── Share toast state ─────────────────────────────────────────────────────
-  //
-  // The toast is only shown for the clipboard-copy fallback.
-  // If navigator.share succeeds, the OS sheet handles its own UX.
-
-  const [showToast, setShowToast] = useState(false);
+  const [showToast, setShowToast]    = useState(false);
 
   const insight    = INSIGHTS.find((i) => i.id === insightId) ?? null;
-  const accessCase = resolveAccess(insight);
-
-  // ── Bookmark handler ──────────────────────────────────────────────────────
+  const accessCase = resolveAccess(insight, isLoggedIn, hasProAccess);
 
   function handleBookmark() {
     startTransition(async () => {
-      // Flip the icon synchronously for zero-latency UX.
       setOptimisticIsSaved(!optimisticIsSaved);
-      // Persist to D1; revalidatePath("/saved") and revalidatePath(`/insights/${insightId}`)
-      // are called inside the action to keep SSR cache in sync.
       await toggleSaveInsight(insightId);
-      // On error, React automatically reverts the optimistic state.
     });
   }
-
-  // ── Share handler ─────────────────────────────────────────────────────────
-  //
-  // Strategy:
-  //   1. navigator.share (Web Share API) — supported on iOS Safari, Android
-  //      Chrome, and modern desktop Chrome/Edge.  Opens the OS native sheet.
-  //      We await it; if the user dismisses the sheet, it rejects with
-  //      AbortError — we catch that silently without falling back to clipboard
-  //      (user intentionally cancelled, no need for a toast).
-  //   2. navigator.clipboard.writeText — works in all modern browsers on HTTPS.
-  //      Shows the "Link copied!" toast.
-  //   3. Neither available (very old browser / non-HTTPS) — silent no-op.
 
   async function handleShare() {
     const url   = window.location.href;
@@ -646,26 +551,21 @@ export default function InsightDetailClient({
       : "TradeInsight Daily";
     const text  = insight?.summary ?? "Market bias analysis — TradeInsight Daily";
 
-    // ── Path 1: Web Share API ────────────────────────────────────────────
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         await navigator.share({ title, text, url });
-        // Successfully opened the OS share sheet — no toast needed.
         return;
       } catch (err) {
-        // AbortError means user dismissed the sheet; don't fall through.
         if (err instanceof DOMException && err.name === "AbortError") return;
-        // Any other error (e.g. DataError) falls through to clipboard.
       }
     }
 
-    // ── Path 2: Clipboard fallback ───────────────────────────────────────
     try {
       await navigator.clipboard.writeText(url);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2400);
     } catch {
-      // Path 3: Silent no-op (non-HTTPS or very old browser).
+      // silent no-op
     }
   }
 
@@ -680,33 +580,25 @@ export default function InsightDetailClient({
       <ShareToast visible={showToast} />
 
       <div className="min-h-screen w-full overflow-x-hidden bg-zinc-950 text-white antialiased selection:bg-sky-500/30 selection:text-sky-200">
-
-        {/* Ambient glow */}
         <div className="pointer-events-none fixed left-1/2 top-[20%] h-[600px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/[0.03] blur-[140px]" />
 
-        {/* ── NAV ─────────────────────────────────────────────────────────── */}
+        {/* ── NAV ── */}
         <nav className="sticky top-[2px] z-40 flex items-center justify-between border-b border-zinc-800/50 bg-zinc-950/80 backdrop-blur-xl px-4 py-3 sm:px-6">
           <Link href="/feed" className="group flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200">
             <ArrowLeft size={13} strokeWidth={2} className="transition-transform duration-150 group-hover:-translate-x-0.5" />
             Market Feed
           </Link>
-          <span className="hidden text-[11px] font-semibold tracking-widest text-zinc-700 sm:block">
-            TRADE INSIGHT DAILY
-          </span>
-          {/* Nav-level share button mirrors the sticky bar for discoverability */}
-          <button
-            onClick={handleShare}
-            className="flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200"
-          >
+          <span className="hidden text-[11px] font-semibold tracking-widest text-zinc-700 sm:block">TRADE INSIGHT DAILY</span>
+          <button onClick={handleShare} className="flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200">
             <Share2 size={13} strokeWidth={1.75} />
             <span className="hidden sm:inline">Share</span>
           </button>
         </nav>
 
-        {/* ── READING COLUMN ───────────────────────────────────────────────── */}
+        {/* ── READING COLUMN ── */}
         <main className="mx-auto w-full max-w-3xl px-4 pb-32 sm:px-6 lg:px-8">
 
-          {/* ── ARTICLE HEADER ────────────────────────────────────────────── */}
+          {/* ── ARTICLE HEADER ── */}
           <header className={`relative mt-8 mb-8 overflow-hidden rounded-2xl border border-zinc-800/70 bg-zinc-900/40 bg-gradient-to-br ${dir.headerAccent} to-transparent px-5 py-6 sm:px-7 sm:py-7`}>
             <div className="pointer-events-none absolute inset-0 opacity-[0.015]"
               style={{ backgroundImage: "repeating-linear-gradient(0deg, #fff 0px, #fff 1px, transparent 1px, transparent 24px), repeating-linear-gradient(90deg, #fff 0px, #fff 1px, transparent 1px, transparent 24px)" }}
@@ -721,24 +613,12 @@ export default function InsightDetailClient({
                 )}
                 <span className="ml-auto"><DirectionBadge direction={insight.direction} /></span>
               </div>
-
-              <h1 className="mb-1 text-2xl font-extrabold leading-tight tracking-tight text-white sm:text-3xl">
-                {insight.asset}
-              </h1>
-              <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-600">
-                {insight.biasType}
-              </p>
-              <p className="text-[13.5px] font-light leading-relaxed text-zinc-400 sm:text-sm">
-                {insight.summary}
-              </p>
-
+              <h1 className="mb-1 text-2xl font-extrabold leading-tight tracking-tight text-white sm:text-3xl">{insight.asset}</h1>
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-600">{insight.biasType}</p>
+              <p className="text-[13.5px] font-light leading-relaxed text-zinc-400 sm:text-sm">{insight.summary}</p>
               <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-800/60 pt-4">
-                <span className="flex items-center gap-1.5 text-[10.5px] text-zinc-600">
-                  <Clock size={10} strokeWidth={1.75} />{insight.publishedAt}
-                </span>
-                <span className="flex items-center gap-1.5 text-[10.5px] text-zinc-600">
-                  <BookOpen size={10} strokeWidth={1.75} />{insight.readMin} min read
-                </span>
+                <span className="flex items-center gap-1.5 text-[10.5px] text-zinc-600"><Clock size={10} strokeWidth={1.75} />{insight.publishedAt}</span>
+                <span className="flex items-center gap-1.5 text-[10.5px] text-zinc-600"><BookOpen size={10} strokeWidth={1.75} />{insight.readMin} min read</span>
                 <div className="ml-auto flex min-w-[120px] items-center gap-2">
                   <span className="text-[9.5px] font-semibold uppercase tracking-widest text-zinc-700">Confidence</span>
                   <div className="flex-1"><ConfidenceBar value={insight.confidence} barCls={dir.barCls} /></div>
@@ -747,7 +627,7 @@ export default function InsightDetailClient({
             </div>
           </header>
 
-          {/* ── HISTORICAL PROOF STRIP ────────────────────────────────────── */}
+          {/* ── HISTORICAL PROOF STRIP ── */}
           {isPastPro && (
             <div className="mb-6 flex items-start gap-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.05] px-4 py-3.5">
               <CheckCircle size={14} className="mt-0.5 shrink-0 text-violet-400" strokeWidth={2} />
@@ -762,7 +642,7 @@ export default function InsightDetailClient({
             </div>
           )}
 
-          {/* ── AI LANGUAGE SWITCHER ──────────────────────────────────────── */}
+          {/* ── AI LANGUAGE SWITCHER ── */}
           <div className="mb-7 flex items-center justify-between gap-3 rounded-xl border border-zinc-800/60 bg-zinc-900/30 px-3.5 py-2.5">
             <div className="flex items-center gap-2">
               <Languages size={12} className="text-sky-400" strokeWidth={1.75} />
@@ -772,40 +652,38 @@ export default function InsightDetailClient({
             <LanguageSwitcher />
           </div>
 
-          {/* ── ARTICLE BODY ──────────────────────────────────────────────── */}
+          {/* ── ARTICLE BODY ── */}
           <article className="prose-none">
             <ArticleBody text={insight.detail} accessCase={accessCase} asset={insight.asset} />
           </article>
 
-          {/* ── FULL ACCESS STRIP ─────────────────────────────────────────── */}
+          {/* ── FULL ACCESS STRIP ── */}
           {accessCase === "full" && (
             <div className="mt-10 rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] px-5 py-4 sm:px-6">
               <div className="flex items-center gap-3">
                 <ShieldCheck size={16} className="shrink-0 text-emerald-400" strokeWidth={1.75} />
                 <div>
                   <p className="text-[12px] font-semibold text-emerald-300">
-                    {HAS_PRO_ACCESS ? "Full Pro Access" : isPastPro ? "Historical insight — free to read" : "Fundamental insight — free to read"}
+                    {hasProAccess ? "Full Pro Access" : isPastPro ? "Historical insight — free to read" : "Fundamental insight — free to read"}
                   </p>
                   <p className="text-[10.5px] font-light text-zinc-600">
-                    {HAS_PRO_ACCESS ? `All ${insight.readMin}-min analysis unlocked.` : "This analysis is part of your free-tier access."}
+                    {hasProAccess ? `All ${insight.readMin}-min analysis unlocked.` : "This analysis is part of your free-tier access."}
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── BACK LINK ─────────────────────────────────────────────────── */}
+          {/* ── BACK LINK ── */}
           <div className="mt-10 flex items-center justify-center">
             <Link href="/feed" className="group flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-2.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-700 hover:bg-zinc-900/70 hover:text-zinc-200">
               <ArrowLeft size={12} className="transition-transform duration-150 group-hover:-translate-x-0.5" />
               Back to Market Feed
             </Link>
           </div>
-
         </main>
       </div>
 
-      {/* ── STICKY ACTION BAR ─────────────────────────────────────────────── */}
       <StickyActionBar
         optimisticIsSaved={optimisticIsSaved}
         isPending={isPending}
