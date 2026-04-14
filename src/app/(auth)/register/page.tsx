@@ -12,7 +12,7 @@
 //              → jwt callback reads trial dates → redirect to /dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useTransition, Suspense } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter }               from 'next/navigation';
 import { signIn }                  from 'next-auth/react';
 import Link                        from 'next/link';
@@ -86,7 +86,7 @@ function PasswordStrength({ password }: { password: string }) {
 
 // ─── Page Component ───────────────────────────────────────────────────────────
 
-function RegisterForm() {
+export default function RegisterPage() {
   const router = useRouter();
 
   // ── Form state ─────────────────────────────────────────────────────────────
@@ -389,17 +389,5 @@ function RegisterForm() {
         Device fingerprinting is used solely to prevent trial abuse.
       </p>
     </div>
-  );
-}
-
-export default function RegisterPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-800 border-t-sky-500" />
-      </div>
-    }>
-      <RegisterForm />
-    </Suspense>
   );
 }
