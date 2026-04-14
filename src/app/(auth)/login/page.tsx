@@ -5,11 +5,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Credentials flow:
 //   signIn("credentials", { email, password, redirect: false })
-//   → on success: router.push("/dashboard")
+//   → on success: router.push("/feed")
 //   → on error:   display inline error message
 //
 // Google flow:
-//   signIn("google", { callbackUrl: "/dashboard" })
+//   signIn("google", { callbackUrl: "/feed" })
 //   → Auth.js handles the OAuth handshake; no redirect:false needed.
 //
 // Auth.js error codes are mapped to human-readable messages via AUTH_ERRORS.
@@ -118,7 +118,7 @@ function LoginForm() {
       }
 
       // Success — push to dashboard and flush the RSC cache
-      router.push('/dashboard');
+      router.push('/feed');
       router.refresh();
 
     } catch {
@@ -135,7 +135,7 @@ function LoginForm() {
     setIsGLoading(true);
     try {
       // redirect:true (default) — Auth.js navigates to Google then to callbackUrl
-      await signIn('google', { callbackUrl: '/dashboard' });
+      await signIn('google', { callbackUrl: '/feed' });
       // Execution continues here only if something blocked the navigation
     } catch {
       setError('Google sign-in failed. Please try again.');

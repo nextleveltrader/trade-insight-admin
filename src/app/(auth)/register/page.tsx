@@ -5,11 +5,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Form flow:
 //   1. User submits → registerUser() Server Action runs.
-//   2. On success   → signIn("credentials") auto-logs them in → /dashboard.
+//   2. On success   → signIn("credentials") auto-logs them in → /feed.
 //   3. On failure   → error is displayed inline (no full-page refresh).
 //
 // Google flow: signIn("google") → OAuth handshake → createUser event sets trial
-//              → jwt callback reads trial dates → redirect to /dashboard.
+//              → jwt callback reads trial dates → redirect to /feed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useTransition, Suspense } from 'react';
@@ -111,7 +111,7 @@ function RegisterForm() {
   //   A. Call registerUser() server action to create the DB row.
   //   B. If that succeeds, immediately call signIn("credentials") to issue
   //      the JWT and set the auth cookie — no second form submission needed.
-  //   C. Redirect to /dashboard.
+  //   C. Redirect to /feed.
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -159,7 +159,7 @@ function RegisterForm() {
       }
 
       // ── C. Redirect to dashboard ───────────────────────────────────────
-      router.push('/dashboard');
+      router.push('/feed');
       router.refresh(); // flush the RSC cache so layout reads the new session
     });
   }
@@ -172,7 +172,7 @@ function RegisterForm() {
     try {
       // callbackUrl is where Google redirects after OAuth completes.
       // The createUser event in auth.ts will set trial dates for new signups.
-      await signIn('google', { callbackUrl: '/dashboard' });
+      await signIn('google', { callbackUrl: '/feed' });
     } catch {
       setError('Google sign-up failed. Please try again.');
       setIsGLoading(false);
