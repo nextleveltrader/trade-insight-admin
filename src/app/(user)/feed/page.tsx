@@ -1,39 +1,27 @@
 "use client";
 
-// src/app/(user)/dashboard/page.tsx
+// src/app/(user)/feed/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed  v7  "Fluid Responsive Grid"
+// TradeInsight Daily — Market Feed  v8  "Bookmark-Aware Cards"
 //
-// v7 changes vs v6 (business logic & mock data UNCHANGED):
+// v8 changes vs v7 (layout UNCHANGED):
 //
-//   [GRID] FLUID RESPONSIVE COLUMN SYSTEM
-//     • Mobile  (< 640px)  : 1-col "Edge-to-Edge List View" — unchanged.
-//       `-mx-4` bleed + native separator pattern fully preserved.
-//     • sm  (640 – 1023px) : 2 columns (`sm:grid-cols-2`).
-//       Covers vertical PC monitors, portrait tablets, narrow browser windows.
-//     • lg  (1024 – 1279px): 3 columns (`lg:grid-cols-3`).
-//       Standard laptop / desktop viewports.
-//     • xl  (1280 – 1535px): 4 columns (`xl:grid-cols-4`).
-//       Wide desktop monitors.
-//     • 2xl (1536 px+)     : 5 columns (`2xl:grid-cols-5`).
-//       Ultra-wide / dual-monitor split-view setups.
+//   [SAVE] PER-CARD BOOKMARK ICON
+//     • Both mobile list-item and desktop card now have a small Bookmark
+//       button in the top-right corner of the header row.
+//     • Uses useOptimistic + useTransition inside InsightCard so the icon
+//       flips to BookmarkCheck (amber glow) with zero perceived latency.
+//     • Initial saved state is hydrated from D1 via getSavedPostIds() in a
+//       useEffect on mount, then passed down as `initialIsSaved` per card.
 //
-//   [GAP]  gap-4 on sm–lg, gap-5 on xl+ — keeps spacing professional without
-//          feeling cavernous at the wider breakpoints.
+//   [ICON] subtle zinc-600 at rest → amber-400 glow when active.
+//          Active state: border-amber-500/25 bg-amber-500/10 text-amber-400.
+//          Idle state:   transparent border, text-zinc-600, hover→zinc-400.
 //
-//   [OVERFLOW FIX]
-//     • Root page div retains `w-full overflow-x-hidden`.
-//     • Grid container: `-mx-4` only when in mobile list mode; `sm:mx-0`
-//       resets it to the normal block flow. Combined with the layout's
-//       max-w-[1800px] cap and overflow-x-hidden guards this makes
-//       horizontal scrollbars structurally impossible at all breakpoints.
-//
-//   [KEEP] All v6 changes — stats bar, header compression, card-level
-//          blur/lock UI, freemium gates — pixel-identical on sm+.
-//          Mobile list-view (thick separator, bg-zinc-900/30) unchanged.
+//   [KEEP] All v7 grid/gap/overflow behaviour unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useState, useEffect, useOptimistic, useTransition } from "react";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -54,12 +42,15 @@ import {
   Gem,
   History,
   ShieldCheck,
+  Bookmark,
+  BookmarkCheck,
 } from "lucide-react";
+import { toggleSaveInsight, getSavedPostIds } from "@/actions/save-insight";
 
 // ─── SUBSCRIPTION GATE ────────────────────────────────────────────────────────
 const HAS_ACTIVE_SUBSCRIPTION = false;
 
-// ─── TYPES (unchanged) ────────────────────────────────────────────────────────
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 
 type Direction   = "Bullish" | "Bearish" | "Neutral";
 type Category    = "Forex" | "Crypto" | "Indices" | "Commodities" | "Metals";
@@ -81,7 +72,7 @@ interface Insight {
   isHistorical: boolean;
 }
 
-// ─── MOCK DATA (unchanged) ────────────────────────────────────────────────────
+// ─── MOCK DATA ────────────────────────────────────────────────────────────────
 
 const INSIGHTS: Insight[] = [
   {
@@ -134,7 +125,7 @@ const INSIGHTS: Insight[] = [
   },
 ];
 
-// ─── FILTER TABS (unchanged) ──────────────────────────────────────────────────
+// ─── FILTER TABS ──────────────────────────────────────────────────────────────
 
 const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
   { label: "All",         icon: BarChart2  },
@@ -145,7 +136,7 @@ const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
   { label: "Metals",      icon: Gem        },
 ];
 
-// ─── DIRECTION CONFIG (unchanged) ─────────────────────────────────────────────
+// ─── DIRECTION CONFIG ─────────────────────────────────────────────────────────
 
 const DIRECTION_MAP: Record<
   Direction,
@@ -183,7 +174,7 @@ const CATEGORY_STYLE: Record<Category, string> = {
   Metals:      "text-amber-400  bg-amber-500/10  border-amber-500/20",
 };
 
-// ─── HELPERS (unchanged) ──────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 function formatDate() {
   return new Date().toLocaleDateString("en-US", {
@@ -195,7 +186,7 @@ function isCardLocked(i: Insight) {
   return i.isProOnly && !i.isHistorical && !HAS_ACTIVE_SUBSCRIPTION;
 }
 
-// ─── MICRO-COMPONENTS (unchanged) ─────────────────────────────────────────────
+// ─── MICRO-COMPONENTS ─────────────────────────────────────────────────────────
 
 function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
@@ -226,7 +217,7 @@ function ConfidenceBar({
   );
 }
 
-// ─── CARD LOCK BANNER (unchanged) ─────────────────────────────────────────────
+// ─── CARD LOCK BANNER ─────────────────────────────────────────────────────────
 
 function CardLockBanner() {
   return (
@@ -274,25 +265,73 @@ function PastProBadge() {
   );
 }
 
-// ─── INSIGHT CARD ─────────────────────────────────────────────────────────────
+// ─── CARD BOOKMARK BUTTON ─────────────────────────────────────────────────────
 //
-// Renders TWO distinct layouts in one <article>:
+// Self-contained: owns its own useOptimistic + useTransition so the icon
+// flips synchronously on click without waiting for the D1 round-trip.
 //
-//   Mobile  (sm:hidden)  — edge-to-edge list item with native separator pattern.
-//     • bg-zinc-900/30          → subtle row lift off the zinc-950 page body.
-//     • border-t zinc-800/40    → crisp top edge acting as a contrast anchor.
-//     • border-b-[6px] zinc-950 → thick "gutter gap" separator — identical to
-//       the pattern used by Twitter/X, YouTube, and Binance. Because zinc-950
-//       matches the page background, the thick border reads as empty space,
-//       giving a clear, unambiguous item boundary without boxing the row.
-//     • px-4 py-4               → full-bleed horizontal, comfortable vertical.
-//     • All key data on one compressed header row (asset · category · direction).
-//
-//   Desktop (hidden sm:flex) — original floating card from v4.
-//     • Gradient header, body with lock banner, footer.
-//     • hover transforms restricted to sm:hover: to avoid mobile tap flash.
+// Styling intent:
+//   • Idle   → text-zinc-600,  transparent bg/border  (barely visible)
+//   • Hover  → text-zinc-400  (soft lift, no heavy chrome)
+//   • Active → text-amber-400 + amber glow ring        (warm bookmark gold)
+//   • isPending → slight opacity reduction signals in-flight write
 
-function InsightCard({ insight }: { insight: Insight }) {
+function CardBookmarkButton({
+  insightId,
+  initialIsSaved,
+}: {
+  insightId: number;
+  initialIsSaved: boolean;
+}) {
+  const [optimisticSaved, setOptimisticSaved] = useOptimistic(
+    initialIsSaved,
+    (_: boolean, next: boolean) => next,
+  );
+  const [isPending, startTransition] = useTransition();
+
+  function handleClick(e: React.MouseEvent) {
+    // Prevent the click from propagating to a parent <Link> or card.
+    e.preventDefault();
+    e.stopPropagation();
+
+    startTransition(async () => {
+      setOptimisticSaved(!optimisticSaved);
+      await toggleSaveInsight(insightId);
+    });
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={isPending}
+      title={optimisticSaved ? "Remove bookmark" : "Save insight"}
+      className={`
+        flex h-6 w-6 shrink-0 items-center justify-center rounded-lg
+        border transition-all duration-150
+        ${isPending ? "opacity-50" : ""}
+        ${optimisticSaved
+          ? "border-amber-500/25 bg-amber-500/10 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.18)]"
+          : "border-transparent bg-transparent text-zinc-600 hover:border-zinc-700/50 hover:text-zinc-400"
+        }
+      `}
+    >
+      {optimisticSaved
+        ? <BookmarkCheck size={11} strokeWidth={2.2} />
+        : <Bookmark      size={11} strokeWidth={1.75} />
+      }
+    </button>
+  );
+}
+
+// ─── INSIGHT CARD ─────────────────────────────────────────────────────────────
+
+function InsightCard({
+  insight,
+  initialIsSaved,
+}: {
+  insight: Insight;
+  initialIsSaved: boolean;
+}) {
   const dir    = DIRECTION_MAP[insight.direction];
   const catCls = CATEGORY_STYLE[insight.category];
   const locked = isCardLocked(insight);
@@ -322,7 +361,7 @@ function InsightCard({ insight }: { insight: Insight }) {
         "
       >
 
-        {/* Row 1 ── Asset · Category · [Past Pro] · Direction (single line) */}
+        {/* Row 1 ── Asset · Category · [Past Pro] · Direction · Bookmark */}
         <div className="flex items-center gap-1.5">
           <h3 className="shrink-0 text-[13.5px] font-bold tracking-tight text-white">
             {insight.asset}
@@ -335,10 +374,11 @@ function InsightCard({ insight }: { insight: Insight }) {
               <PastProBadge />
             </span>
           )}
-          {/* Direction badge pushed to the right */}
-          <span className="ml-auto shrink-0">
+          {/* Direction badge + bookmark pushed to right */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <DirectionBadge direction={insight.direction} />
-          </span>
+            <CardBookmarkButton insightId={insight.id} initialIsSaved={initialIsSaved} />
+          </div>
         </div>
 
         {/* Row 2 ── Bias type label */}
@@ -346,14 +386,12 @@ function InsightCard({ insight }: { insight: Insight }) {
           {insight.biasType}
         </p>
 
-        {/* Lock banner (only for locked pro items) */}
         {locked && (
           <div className="mt-2.5">
             <CardLockBanner />
           </div>
         )}
 
-        {/* Summary text */}
         <p
           className={`
             mt-2 text-[11.5px] font-light leading-relaxed text-zinc-400
@@ -364,7 +402,6 @@ function InsightCard({ insight }: { insight: Insight }) {
           {insight.summary}
         </p>
 
-        {/* Historical proof strip */}
         {insight.isHistorical && (
           <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5">
             <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
@@ -376,7 +413,6 @@ function InsightCard({ insight }: { insight: Insight }) {
           </div>
         )}
 
-        {/* Confidence bar */}
         <div className="mt-2.5">
           <p className="mb-1 text-[8px] font-semibold uppercase tracking-widest text-zinc-700">
             Confidence
@@ -384,7 +420,6 @@ function InsightCard({ insight }: { insight: Insight }) {
           <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
         </div>
 
-        {/* Footer ── timestamp · read-time · CTA */}
         <div className="mt-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[9.5px] text-zinc-700">
             <span className="flex items-center gap-1">
@@ -419,11 +454,10 @@ function InsightCard({ insight }: { insight: Insight }) {
 
       {/* ══════════════════════════════════════════════════════════════════
           DESKTOP CARD — hidden on mobile, shown on sm+
-          Pixel-identical to v4 card layout.
           ══════════════════════════════════════════════════════════════ */}
       <div className="hidden sm:flex sm:flex-1 sm:flex-col">
 
-        {/* Card Header */}
+        {/* Card Header — asset · category · [Past Pro] | bookmark · direction */}
         <div
           className={`
             flex items-start justify-between gap-2
@@ -446,7 +480,10 @@ function InsightCard({ insight }: { insight: Insight }) {
               {insight.biasType}
             </p>
           </div>
-          <div className="shrink-0 pt-0.5">
+
+          {/* Right cluster: bookmark + direction badge */}
+          <div className="flex shrink-0 items-center gap-2 pt-0.5">
+            <CardBookmarkButton insightId={insight.id} initialIsSaved={initialIsSaved} />
             <DirectionBadge direction={insight.direction} />
           </div>
         </div>
@@ -537,14 +574,6 @@ function InsightCard({ insight }: { insight: Insight }) {
 }
 
 // ─── STATS BAR ────────────────────────────────────────────────────────────────
-//
-// [v5 MOBILE] Individual stat items have NO border/bg/rounded on mobile —
-// they render as clean floating metric pairs (icon · value · label) giving
-// a native finance-app feel.  `sm:rounded-xl sm:border sm:bg-zinc-900/40`
-// restores the card chrome on desktop.
-//
-// The outer scroll container retains `snap-x snap-mandatory` for smooth
-// native scroll on both platforms.
 
 const STATS = [
   { label: "Assets Covered", value: "20",      icon: BarChart2,   iconCls: "text-sky-400",    bgCls: "bg-sky-500/10"     },
@@ -587,7 +616,7 @@ function StatsBar() {
   );
 }
 
-// ─── CATEGORY FILTER (unchanged from v4) ──────────────────────────────────────
+// ─── CATEGORY FILTER ──────────────────────────────────────────────────────────
 
 function CategoryFilter({
   activeFilter,
@@ -626,7 +655,7 @@ function CategoryFilter({
   );
 }
 
-// ─── CONTENT KEY (unchanged from v4) ──────────────────────────────────────────
+// ─── CONTENT KEY ──────────────────────────────────────────────────────────────
 
 function ContentKey() {
   if (HAS_ACTIVE_SUBSCRIPTION) return null;
@@ -658,6 +687,27 @@ function ContentKey() {
 export default function MarketFeedPage() {
   const [activeFilter, setActiveFilter] = useState<FilterLabel>("All");
 
+  // ── Saved IDs hydration ───────────────────────────────────────────────────
+  //
+  // Fetch the user's saved post IDs once on mount so each InsightCard can
+  // receive the correct `initialIsSaved` prop.  This drives the initial icon
+  // state; per-card useOptimistic then takes over for subsequent toggles.
+  //
+  // Note: because toggleSaveInsight calls revalidatePath("/feed"), navigating
+  // away and back will re-render this server route with a fresh HTML shell,
+  // meaning this useEffect re-fires and stays in sync with D1.
+
+  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    getSavedPostIds()
+      .then((ids) => setSavedIds(new Set(ids)))
+      .catch(() => {
+        // Non-fatal: if the fetch fails the icons simply start as unsaved.
+        // The user can still toggle; the action will correct state on the next load.
+      });
+  }, []);
+
   const filtered =
     activeFilter === "All"
       ? INSIGHTS
@@ -666,11 +716,6 @@ export default function MarketFeedPage() {
   const lockedCount = INSIGHTS.filter(isCardLocked).length;
 
   return (
-    /*
-     * Root guard: w-full + overflow-x-hidden. layout.tsx adds a second
-     * guard on <main> and the shell div, so horizontal overflow is
-     * impossible at every level.
-     */
     <div className="relative w-full overflow-x-hidden">
 
       {/* Ambient background glow */}
@@ -679,14 +724,8 @@ export default function MarketFeedPage() {
       <div className="relative">
 
         {/* ── [A] HEADER ────────────────────────────────────────────────── */}
-        {/*
-         * [v5 MOB] "Published at 06:15 AM UTC" subtitle is `hidden sm:block`.
-         * On mobile every pixel counts; the date row + live badge already
-         * give enough temporal context.
-         */}
         <header className="mb-4 sm:mb-6">
 
-          {/* Row 1: date + live badge + refresh */}
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
               {formatDate()}
@@ -699,7 +738,6 @@ export default function MarketFeedPage() {
                 </span>
                 Live · {INSIGHTS.length}
               </div>
-              {/* Refresh button: desktop only */}
               <button
                 className="hidden h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400 sm:flex"
                 title="Refresh feed"
@@ -709,13 +747,11 @@ export default function MarketFeedPage() {
             </div>
           </div>
 
-          {/* Row 2: headline */}
           <h1 className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl">
             Today's{" "}
             <span className="text-sky-400">Market Bias</span>
           </h1>
 
-          {/* Row 3: published-at sub-text — HIDDEN on mobile */}
           <p className="mt-0.5 hidden text-[11px] font-light text-zinc-600 sm:mt-1 sm:block">
             Published at{" "}
             <span className="font-medium text-zinc-500">06:15 AM UTC</span>
@@ -733,32 +769,6 @@ export default function MarketFeedPage() {
         <ContentKey />
 
         {/* ── [E] INSIGHT FEED ──────────────────────────────────────────── */}
-        {/*
-         * [v7] FLUID RESPONSIVE GRID
-         *
-         * Mobile  (< 640px)   : -mx-4 bleed, no grid.
-         *   Each InsightCard renders its own mobile list item (sm:hidden).
-         *   The thick border-b-[6px] border-b-zinc-950 separator pattern is
-         *   fully preserved — no divide-y needed on the container.
-         *
-         * sm  (640–1023px)    : sm:mx-0 resets the bleed.
-         *   sm:grid + sm:grid-cols-2 + sm:gap-4
-         *   Handles vertical PC monitors / narrow browser windows cleanly.
-         *
-         * lg  (1024–1279px)   : lg:grid-cols-3
-         *   Standard laptop / desktop. Unchanged from v6.
-         *
-         * xl  (1280–1535px)   : xl:grid-cols-4 + xl:gap-5
-         *   Wide desktop monitors get a 4th column and slightly wider gutters.
-         *
-         * 2xl (1536 px+)      : 2xl:grid-cols-5
-         *   Ultra-wide / dual-monitor setups fill the viewport properly.
-         *   layout.tsx max-w-[1800px] ensures cards never become too narrow.
-         *
-         * The three-tier overflow guard (page root → <main> → shell div)
-         * from v5/v6 means horizontal scrollbars are structurally impossible
-         * at every breakpoint regardless of content width.
-         */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
             <BarChart2 size={26} className="mb-2.5 text-zinc-700" strokeWidth={1.5} />
@@ -776,7 +786,11 @@ export default function MarketFeedPage() {
             "
           >
             {filtered.map((insight) => (
-              <InsightCard key={insight.id} insight={insight} />
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                initialIsSaved={savedIds.has(insight.id)}
+              />
             ))}
           </div>
         )}

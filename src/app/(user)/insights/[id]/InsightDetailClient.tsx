@@ -7,12 +7,27 @@
 // Receives `insightId` and `initialIsSaved` as props from the server wrapper
 // (page.tsx), which fetched the bookmark state from D1 before first render.
 //
-// Bookmark flow:
+// ── Bookmark flow ────────────────────────────────────────────────────────────
 //   1. User taps bookmark button.
 //   2. useOptimistic flips the icon INSTANTLY (zero perceived latency).
 //   3. useTransition calls toggleSaveInsight() in the background.
 //   4. On settlement, React reconciles — if the action failed the optimistic
 //      state rolls back automatically; on success it stays.
+//
+// ── Share flow ───────────────────────────────────────────────────────────────
+//   1. Try navigator.share (Web Share API) — available on mobile browsers and
+//      modern desktop Chrome/Edge.  Fires the OS-native share sheet.
+//   2. If share is unsupported or the user cancels, fall back to
+//      navigator.clipboard.writeText and show a "Link copied!" toast.
+//   3. If clipboard is also unavailable (very old browser / no HTTPS),
+//      silently no-op — the toast never fires so there is no false signal.
+//
+// ── In-sync state ────────────────────────────────────────────────────────────
+//   The server wrapper (page.tsx) calls getIsSaved(id) before streaming HTML.
+//   toggleSaveInsight calls revalidatePath so the NEXT visit to this page
+//   always receives the correct `initialIsSaved`.  Between visits, the feed
+//   page independently hydrates its own savedIds set, so both surfaces stay
+//   consistent without any shared client-side store.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useOptimistic, useTransition } from "react";
@@ -199,8 +214,8 @@ function resolveAccess(insight: Insight | null): AccessCase {
 }
 
 function getSnippet(text: string): string {
-  const targetLen  = Math.floor(text.length * 0.3);
-  const slice      = text.slice(0, targetLen + 60);
+  const targetLen   = Math.floor(text.length * 0.3);
+  const slice       = text.slice(0, targetLen + 60);
   const sentenceEnd = Math.max(
     slice.lastIndexOf(". "),
     slice.lastIndexOf(".\n"),
@@ -417,15 +432,13 @@ function ArticleBody({ text, accessCase, asset }: { text: string; accessCase: Ac
 
 // ─── STICKY BOTTOM ACTION BAR ─────────────────────────────────────────────────
 //
-// BOOKMARK WIRING
-// ─────────────────────────────────────────────────────────────────────────────
-// Props:
-//   optimisticIsSaved  — the value from useOptimistic in the parent; updates
-//                        instantly on click for zero-latency perceived state.
-//   isPending          — true while the server action is in flight; used to
-//                        dim the icon slightly to signal background activity.
-//   onBookmark         — calls startTransition(toggleSaveInsight(...)).
-//   onShare / onCopy   — unchanged share handlers.
+// Bookmark:
+//   optimisticIsSaved  → reflects the DB value + any in-flight optimistic flip.
+//   isPending          → dims the icon slightly while the D1 write is in flight.
+//   onBookmark         → fires startTransition(toggleSaveInsight(...)) in parent.
+//
+// Share:
+//   onShare → tries Web Share API, falls back to clipboard; toast handled above.
 
 function StickyActionBar({
   optimisticIsSaved,
@@ -443,12 +456,6 @@ function StickyActionBar({
       <div className="pointer-events-auto mb-4 flex items-center gap-1 rounded-2xl border border-zinc-700/60 bg-zinc-950/85 backdrop-blur-2xl px-2 py-2 shadow-2xl shadow-black/50">
 
         {/* ── BOOKMARK ──────────────────────────────────────────────────── */}
-        {/*
-         * optimisticIsSaved flips synchronously in the UI via useOptimistic.
-         * isPending provides a subtle visual cue that the DB write is in
-         * flight — we reduce opacity slightly rather than showing a spinner,
-         * which would feel jittery on a fast connection.
-         */}
         <button
           onClick={onBookmark}
           disabled={isPending}
@@ -458,13 +465,13 @@ function StickyActionBar({
             text-[11px] font-semibold transition-all duration-150
             ${isPending ? "opacity-60" : ""}
             ${optimisticIsSaved
-              ? "bg-amber-500/12 text-amber-400 border border-amber-500/25"
+              ? "bg-amber-500/12 text-amber-400 border border-amber-500/25 shadow-[0_0_10px_rgba(245,158,11,0.15)]"
               : "text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-200 border border-transparent"
             }
           `}
         >
           {optimisticIsSaved
-            ? <BookmarkCheck size={14} strokeWidth={2} className="transition-transform duration-150 group-active:scale-90" />
+            ? <BookmarkCheck size={14} strokeWidth={2}    className="transition-transform duration-150 group-active:scale-90" />
             : <Bookmark      size={14} strokeWidth={1.75} className="transition-transform duration-150 group-active:scale-90" />
           }
           <span className="hidden sm:inline">
@@ -501,6 +508,9 @@ function StickyActionBar({
 }
 
 // ─── SHARE TOAST ─────────────────────────────────────────────────────────────
+//
+// Shown only for the clipboard-copy fallback path.
+// The Web Share API dismisses itself via the OS sheet — no toast needed.
 
 function ShareToast({ visible }: { visible: boolean }) {
   return (
@@ -578,16 +588,14 @@ export default function InsightDetailClient({
 
   // ── Bookmark state ────────────────────────────────────────────────────────
   //
+  // `initialIsSaved` comes from the server wrapper which queries D1 at render
+  // time, so it is always correct on first paint regardless of what the user
+  // did from the feed page (revalidatePath keeps D1 in sync).
+  //
   // useOptimistic(sourceOfTruth, reducerFn)
-  //
-  //   • `optimisticIsSaved` is what we render — it reflects the DB value
-  //     between transitions and the flipped value *during* a transition.
-  //   • `setOptimisticIsSaved` queues an optimistic update that is active
-  //     only for the duration of the current transition.  React rolls it
-  //     back automatically if the action throws.
-  //
-  // useTransition wraps the async server action so React can batch the
-  // optimistic update with the re-render and expose isPending.
+  //   • `optimisticIsSaved` is what we render.
+  //   • `setOptimisticIsSaved` queues a flip that is active only for the
+  //     duration of the current transition; React rolls it back on error.
 
   const [optimisticIsSaved, setOptimisticIsSaved] = useOptimistic(
     initialIsSaved,
@@ -595,29 +603,70 @@ export default function InsightDetailClient({
   );
 
   const [isPending, startTransition] = useTransition();
-  const [showToast, setShowToast]    = useState(false);
+
+  // ── Share toast state ─────────────────────────────────────────────────────
+  //
+  // The toast is only shown for the clipboard-copy fallback.
+  // If navigator.share succeeds, the OS sheet handles its own UX.
+
+  const [showToast, setShowToast] = useState(false);
 
   const insight    = INSIGHTS.find((i) => i.id === insightId) ?? null;
   const accessCase = resolveAccess(insight);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Bookmark handler ──────────────────────────────────────────────────────
 
   function handleBookmark() {
-    // Flip the icon immediately, fire the server action in the background.
     startTransition(async () => {
+      // Flip the icon synchronously for zero-latency UX.
       setOptimisticIsSaved(!optimisticIsSaved);
+      // Persist to D1; revalidatePath("/saved") and revalidatePath(`/insights/${insightId}`)
+      // are called inside the action to keep SSR cache in sync.
       await toggleSaveInsight(insightId);
-      // Note: on error React reverts the optimistic state automatically.
-      // On success, revalidatePath in the action keeps /saved in sync.
+      // On error, React automatically reverts the optimistic state.
     });
   }
 
-  function handleShare() {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href).catch(() => {});
+  // ── Share handler ─────────────────────────────────────────────────────────
+  //
+  // Strategy:
+  //   1. navigator.share (Web Share API) — supported on iOS Safari, Android
+  //      Chrome, and modern desktop Chrome/Edge.  Opens the OS native sheet.
+  //      We await it; if the user dismisses the sheet, it rejects with
+  //      AbortError — we catch that silently without falling back to clipboard
+  //      (user intentionally cancelled, no need for a toast).
+  //   2. navigator.clipboard.writeText — works in all modern browsers on HTTPS.
+  //      Shows the "Link copied!" toast.
+  //   3. Neither available (very old browser / non-HTTPS) — silent no-op.
+
+  async function handleShare() {
+    const url   = window.location.href;
+    const title = insight
+      ? `${insight.asset} — ${insight.biasType} | TradeInsight Daily`
+      : "TradeInsight Daily";
+    const text  = insight?.summary ?? "Market bias analysis — TradeInsight Daily";
+
+    // ── Path 1: Web Share API ────────────────────────────────────────────
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, text, url });
+        // Successfully opened the OS share sheet — no toast needed.
+        return;
+      } catch (err) {
+        // AbortError means user dismissed the sheet; don't fall through.
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Any other error (e.g. DataError) falls through to clipboard.
+      }
     }
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2400);
+
+    // ── Path 2: Clipboard fallback ───────────────────────────────────────
+    try {
+      await navigator.clipboard.writeText(url);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2400);
+    } catch {
+      // Path 3: Silent no-op (non-HTTPS or very old browser).
+    }
   }
 
   if (!insight) return <NotFound />;
@@ -644,7 +693,11 @@ export default function InsightDetailClient({
           <span className="hidden text-[11px] font-semibold tracking-widest text-zinc-700 sm:block">
             TRADE INSIGHT DAILY
           </span>
-          <button onClick={handleShare} className="flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200">
+          {/* Nav-level share button mirrors the sticky bar for discoverability */}
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 rounded-lg border border-transparent px-2.5 py-1.5 text-[11.5px] font-semibold text-zinc-500 transition-all duration-150 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200"
+          >
             <Share2 size={13} strokeWidth={1.75} />
             <span className="hidden sm:inline">Share</span>
           </button>
