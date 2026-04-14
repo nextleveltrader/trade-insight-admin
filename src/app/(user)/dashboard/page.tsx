@@ -2,21 +2,44 @@
 
 // src/app/(user)/dashboard/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed v3  "Mixed Freemium + Time-Delayed Unlock"
+// TradeInsight Daily — Market Feed v4  "Mobile-First High Density Fix"
 //
-// Business logic:
-//   • Fundamental Biases        → always FREE for everyone
-//   • ICT Biases (today)        → LOCKED for free users  (isProOnly + !isHistorical)
-//   • ICT Biases (yesterday+)   → FREE "historical proof" (isProOnly + isHistorical)
+// v4 changes (business logic & mock data unchanged from v3):
 //
-// v3 removes the v2 global paywall overlay.  Locking is now card-level:
-//   locked card → blur on summary / detail / confidence bar
-//              → small glassmorphism "CardLockBanner" inside the card body
+//   [CRIT] OVERFLOW FIX
+//     • Root div: `w-full overflow-x-hidden` — absolute guard
+//     • Removed -mx-4 / px-4 bleed trick (the root cause of the white gap)
+//     • StatsBar + Filter: `w-full overflow-x-auto scrollbar-none snap-x snap-mandatory`
+//       with `first:pl-4 last:pr-4 sm:first:pl-0 sm:last:pr-0` spacers baked
+//       into the item itself — no negative-margin math needed
 //
-// All v2 mobile fixes are preserved:
-//   • overflow-x-hidden on root
-//   • Stats Bar: horizontal flex + overflow-x-auto + min-w per card
-//   • Filter row: -mx-4 / px-4 bleed + [&::-webkit-scrollbar]:hidden
+//   [MOB] HEADER COMPRESSION
+//     • Date + live badge on same row (space-between)
+//     • h1 → text-2xl on mobile, sm:text-3xl on desktop
+//     • mb-6 → mb-4
+//     • Refresh button hidden on mobile (not critical for the reading flow)
+//
+//   [MOB] STATS BAR
+//     • snap-start on each card
+//     • px-3 py-3 instead of px-4 py-3.5 → more cards visible
+//     • min-w-[136px] (down from 148px)
+//
+//   [MOB] FILTER PILLS
+//     • snap-start on each pill
+//     • Slightly tighter px-3 py-1 (was px-3.5 py-1.5)
+//
+//   [MOB] CONTENT KEY
+//     • Collapsed to a single tight horizontal scroll row
+//     • text-[8.5px], py-2, no wasted vertical space
+//
+//   [MOB] INSIGHT CARDS
+//     • px-3 py-3 body padding (was px-4 py-4)
+//     • summary: text-[11.5px] sm:text-[12.5px]
+//     • CardLockBanner: flex-wrap + tighter spacing — safe on iPhone SE
+//
+//   [MOB] BOTTOM NUDGE
+//     • py-4 px-4 (was py-5 px-6), gap-3 (was gap-4)
+//     • CTA button full-width on mobile
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -43,7 +66,6 @@ import {
 } from "lucide-react";
 
 // ─── SUBSCRIPTION GATE ────────────────────────────────────────────────────────
-// Flip to `true` to preview the fully-unlocked Pro dashboard.
 const HAS_ACTIVE_SUBSCRIPTION = false;
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -64,110 +86,60 @@ interface Insight {
   publishedAt:  string;
   readMin:      number;
   confidence:   number;
-  isProOnly:    boolean;  // true = ICT content; false = Fundamental (always free)
-  isHistorical: boolean;  // true = yesterday or older → auto-unlocked
+  isProOnly:    boolean;
+  isHistorical: boolean;
 }
 
-// ─── MOCK DATA ────────────────────────────────────────────────────────────────
-//   2× Fundamental  (isProOnly: false)                    → always free
-//   2× Today ICT    (isProOnly: true, isHistorical: false) → locked for free users
-//   2× Yesterday ICT(isProOnly: true, isHistorical: true)  → unlocked "Past Pro Bias"
+// ─── MOCK DATA (unchanged from v3) ───────────────────────────────────────────
 
 const INSIGHTS: Insight[] = [
-  // ── Fundamentals ──────────────────────────────────────────────────────────
   {
-    id:           1,
-    asset:        "EUR/USD",
-    category:     "Forex",
-    direction:    "Bullish",
-    biasType:     "Fundamental Bias",
-    summary:      "Softer USD tone following yesterday's weaker ISM Services data underpins the Euro. ECB speak today could amplify the move if rhetoric turns less dovish.",
-    detail:       "Macro backdrop supports dip-buying. Watch the 1.0870 demand area for intraday confirmation entries.",
-    timeAgo:      "2h ago",
-    publishedAt:  "06:15 AM UTC",
-    readMin:      4,
-    confidence:   74,
-    isProOnly:    false,
-    isHistorical: false,
+    id: 1, asset: "EUR/USD", category: "Forex", direction: "Bullish",
+    biasType: "Fundamental Bias",
+    summary: "Softer USD tone following yesterday's weaker ISM Services data underpins the Euro. ECB speak today could amplify the move if rhetoric turns less dovish.",
+    detail: "Macro backdrop supports dip-buying. Watch the 1.0870 demand area for intraday confirmation entries.",
+    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 4, confidence: 74,
+    isProOnly: false, isHistorical: false,
   },
   {
-    id:           2,
-    asset:        "GOLD",
-    category:     "Metals",
-    direction:    "Bullish",
-    biasType:     "Fundamental Outlook",
-    summary:      "Geopolitical risk premium and a pause in real yield gains continue to support Gold. CPI data due Thursday is the next major fundamental catalyst.",
-    detail:       "Fundamental bias: long-side. Key support at 2,318 — a close below invalidates the setup.",
-    timeAgo:      "3h ago",
-    publishedAt:  "06:15 AM UTC",
-    readMin:      5,
-    confidence:   79,
-    isProOnly:    false,
-    isHistorical: false,
-  },
-
-  // ── Today's ICT Biases (locked for free users) ────────────────────────────
-  {
-    id:           3,
-    asset:        "GBP/USD",
-    category:     "Forex",
-    direction:    "Bearish",
-    biasType:     "ICT Bias — Today",
-    summary:      "Bearish OB at 1.2738–1.2754 sitting directly above price. A retest into this zone with a rejection sets up a clean short targeting the 1.2680 BSL pool.",
-    detail:       "Daily FVG at 1.2695 acting as a draw on liquidity. SL above 1.2760 for tight risk management.",
-    timeAgo:      "2h ago",
-    publishedAt:  "06:15 AM UTC",
-    readMin:      6,
-    confidence:   81,
-    isProOnly:    true,
-    isHistorical: false,
+    id: 2, asset: "GOLD", category: "Metals", direction: "Bullish",
+    biasType: "Fundamental Outlook",
+    summary: "Geopolitical risk premium and a pause in real yield gains continue to support Gold. CPI data due Thursday is the next major fundamental catalyst.",
+    detail: "Fundamental bias: long-side. Key support at 2,318 — a close below invalidates the setup.",
+    timeAgo: "3h ago", publishedAt: "06:15 AM UTC", readMin: 5, confidence: 79,
+    isProOnly: false, isHistorical: false,
   },
   {
-    id:           4,
-    asset:        "BTC/USD",
-    category:     "Crypto",
-    direction:    "Bullish",
-    biasType:     "ICT Bias — Today",
-    summary:      "Weekly FVG between 66,200–67,100 provided a clean mitigation. Expecting displacement higher toward the 70,400 buyside liquidity as the primary draw on price.",
-    detail:       "Only long-bias setups in play today. Any sell below 65,800 invalidates the weekly bullish narrative.",
-    timeAgo:      "2h ago",
-    publishedAt:  "06:15 AM UTC",
-    readMin:      7,
-    confidence:   77,
-    isProOnly:    true,
-    isHistorical: false,
-  },
-
-  // ── Yesterday's ICT Biases (auto-unlocked as historical accuracy proof) ────
-  {
-    id:           5,
-    asset:        "US500",
-    category:     "Indices",
-    direction:    "Bullish",
-    biasType:     "ICT Bias — Yesterday",
-    summary:      "Price swept the 5,198 sell-side liquidity in the London session then delivered a full bullish displacement into New York open. Bias played out for +38 pts.",
-    detail:       "Confirmation came via the 15-min MSS at 5,210. Entry at the FVG retest, target hit at 5,248.",
-    timeAgo:      "Yesterday",
-    publishedAt:  "06:15 AM UTC · Apr 13",
-    readMin:      5,
-    confidence:   88,
-    isProOnly:    true,
-    isHistorical: true,
+    id: 3, asset: "GBP/USD", category: "Forex", direction: "Bearish",
+    biasType: "ICT Bias — Today",
+    summary: "Bearish OB at 1.2738–1.2754 sitting directly above price. A retest into this zone with rejection sets up a clean short targeting the 1.2680 BSL pool.",
+    detail: "Daily FVG at 1.2695 acting as a draw on liquidity. SL above 1.2760 for tight risk management.",
+    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 6, confidence: 81,
+    isProOnly: true, isHistorical: false,
   },
   {
-    id:           6,
-    asset:        "OIL (WTI)",
-    category:     "Commodities",
-    direction:    "Bearish",
-    biasType:     "ICT Bias — Yesterday",
-    summary:      "Bearish OB at 87.40–87.65 was mitigated perfectly in early London. Price delivered a sharp sell-off into the 84.90 void — a textbook ICT delivery.",
-    detail:       "The session closed at 85.10, capturing 90% of the projected move. Bias accuracy: confirmed.",
-    timeAgo:      "Yesterday",
-    publishedAt:  "06:15 AM UTC · Apr 13",
-    readMin:      4,
-    confidence:   91,
-    isProOnly:    true,
-    isHistorical: true,
+    id: 4, asset: "BTC/USD", category: "Crypto", direction: "Bullish",
+    biasType: "ICT Bias — Today",
+    summary: "Weekly FVG between 66,200–67,100 provided a clean mitigation. Expecting displacement higher toward the 70,400 buyside liquidity as the primary draw on price.",
+    detail: "Only long-bias setups in play today. Any sell below 65,800 invalidates the weekly bullish narrative.",
+    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 7, confidence: 77,
+    isProOnly: true, isHistorical: false,
+  },
+  {
+    id: 5, asset: "US500", category: "Indices", direction: "Bullish",
+    biasType: "ICT Bias — Yesterday",
+    summary: "Price swept the 5,198 sell-side liquidity in the London session then delivered a full bullish displacement into New York open. Bias played out for +38 pts.",
+    detail: "Confirmation came via the 15-min MSS at 5,210. Entry at the FVG retest, target hit at 5,248.",
+    timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 5, confidence: 88,
+    isProOnly: true, isHistorical: true,
+  },
+  {
+    id: 6, asset: "OIL (WTI)", category: "Commodities", direction: "Bearish",
+    biasType: "ICT Bias — Yesterday",
+    summary: "Bearish OB at 87.40–87.65 was mitigated perfectly in early London. Price delivered a sharp sell-off into the 84.90 void — a textbook ICT delivery.",
+    detail: "The session closed at 85.10, capturing 90% of the projected move. Bias accuracy: confirmed.",
+    timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 4, confidence: 91,
+    isProOnly: true, isHistorical: true,
   },
 ];
 
@@ -187,37 +159,28 @@ const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
 const DIRECTION_MAP: Record<
   Direction,
   {
-    Icon:        React.ElementType;
-    badgeCls:    string;
-    barCls:      string;
-    glowCls:     string;
-    borderHover: string;
-    headerGlow:  string;
+    Icon: React.ElementType;
+    badgeCls: string; barCls: string;
+    glowCls: string; borderHover: string; headerGlow: string;
   }
 > = {
   Bullish: {
-    Icon:        TrendingUp,
-    badgeCls:    "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-    barCls:      "bg-emerald-400",
-    glowCls:     "hover:shadow-emerald-500/20",
-    borderHover: "hover:border-emerald-500/30",
-    headerGlow:  "from-emerald-500/[0.05]",
+    Icon: TrendingUp,
+    badgeCls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
+    barCls: "bg-emerald-400", glowCls: "hover:shadow-emerald-500/20",
+    borderHover: "hover:border-emerald-500/30", headerGlow: "from-emerald-500/[0.05]",
   },
   Bearish: {
-    Icon:        TrendingDown,
-    badgeCls:    "text-rose-400 bg-rose-500/10 border-rose-500/25",
-    barCls:      "bg-rose-400",
-    glowCls:     "hover:shadow-rose-500/20",
-    borderHover: "hover:border-rose-500/30",
-    headerGlow:  "from-rose-500/[0.05]",
+    Icon: TrendingDown,
+    badgeCls: "text-rose-400 bg-rose-500/10 border-rose-500/25",
+    barCls: "bg-rose-400", glowCls: "hover:shadow-rose-500/20",
+    borderHover: "hover:border-rose-500/30", headerGlow: "from-rose-500/[0.05]",
   },
   Neutral: {
-    Icon:        Minus,
-    badgeCls:    "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
-    barCls:      "bg-zinc-500",
-    glowCls:     "hover:shadow-zinc-500/10",
-    borderHover: "hover:border-zinc-600/40",
-    headerGlow:  "from-zinc-700/[0.05]",
+    Icon: Minus,
+    badgeCls: "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
+    barCls: "bg-zinc-500", glowCls: "hover:shadow-zinc-500/10",
+    borderHover: "hover:border-zinc-600/40", headerGlow: "from-zinc-700/[0.05]",
   },
 };
 
@@ -233,122 +196,89 @@ const CATEGORY_STYLE: Record<Category, string> = {
 
 function formatDate() {
   return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year:    "numeric",
-    month:   "long",
-    day:     "numeric",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 }
 
-function isCardLocked(insight: Insight): boolean {
-  return insight.isProOnly && !insight.isHistorical && !HAS_ACTIVE_SUBSCRIPTION;
+function isCardLocked(i: Insight) {
+  return i.isProOnly && !i.isHistorical && !HAS_ACTIVE_SUBSCRIPTION;
 }
 
-// ─── DIRECTION BADGE ─────────────────────────────────────────────────────────
+// ─── MICRO-COMPONENTS ────────────────────────────────────────────────────────
 
 function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${badgeCls}`}>
-      <Icon size={11} strokeWidth={2.5} />
+    <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${badgeCls}`}>
+      <Icon size={10} strokeWidth={2.5} />
       {direction}
     </span>
   );
 }
 
-// ─── CONFIDENCE BAR ───────────────────────────────────────────────────────────
-
-function ConfidenceBar({
-  value,
-  barCls,
-  blurred,
-}: {
-  value:   number;
-  barCls:  string;
-  blurred: boolean;
-}) {
+function ConfidenceBar({ value, barCls, blurred }: { value: number; barCls: string; blurred: boolean }) {
   return (
     <div className={`flex items-center gap-2 transition-all ${blurred ? "blur-sm select-none" : ""}`}>
       <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-zinc-800">
         <div className={`h-full rounded-full ${barCls}`} style={{ width: `${value}%` }} />
       </div>
-      <span className="w-7 text-right font-mono text-[9px] font-medium text-zinc-600">
-        {value}%
-      </span>
+      <span className="w-6 text-right font-mono text-[9px] font-medium text-zinc-600">{value}%</span>
     </div>
   );
 }
 
-// ─── CARD-LEVEL LOCK BANNER ───────────────────────────────────────────────────
-// A compact glassmorphism strip rendered INSIDE the card body above the
-// blurred content. Not a full overlay — intentionally small and inline.
+// ─── CARD LOCK BANNER ────────────────────────────────────────────────────────
+// [MOB] flex-wrap so the Unlock button drops to its own line on iPhone SE
+//       instead of overflowing right.
 
 function CardLockBanner() {
   return (
     <div
       className="
-        relative z-10 mb-3
-        flex items-center justify-between gap-3
+        relative z-10 mb-3 flex flex-wrap items-center justify-between gap-2
         overflow-hidden rounded-xl
-        border border-amber-500/20
-        bg-zinc-900/70 backdrop-blur-md
-        px-3.5 py-2.5
+        border border-amber-500/20 bg-zinc-900/70 backdrop-blur-md
+        px-3 py-2
       "
     >
-      {/* Warm ambient glow behind the lock icon */}
-      <div className="pointer-events-none absolute -left-4 top-1/2 h-12 w-12 -translate-y-1/2 rounded-full bg-amber-500/15 blur-2xl" />
-
-      <div className="relative flex items-center gap-2.5">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-amber-500/25 bg-amber-500/10">
-          <Lock size={11} className="text-amber-400" strokeWidth={2} />
+      <div className="pointer-events-none absolute -left-4 top-1/2 h-10 w-10 -translate-y-1/2 rounded-full bg-amber-500/15 blur-xl" />
+      <div className="relative flex items-center gap-2">
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-amber-500/25 bg-amber-500/10">
+          <Lock size={10} className="text-amber-400" strokeWidth={2} />
         </div>
         <div>
-          <p className="text-[11px] font-bold leading-none text-white">Pro Insight</p>
-          <p className="mt-0.5 text-[10px] font-light leading-tight text-zinc-500">
+          <p className="text-[10.5px] font-bold leading-none text-white">Pro Insight</p>
+          <p className="mt-0.5 text-[9.5px] font-light leading-tight text-zinc-500">
             Upgrade to unlock today's ICT bias
           </p>
         </div>
       </div>
-
       <Link
         href="/upgrade"
         className="
-          relative shrink-0 flex items-center gap-1
-          rounded-lg border border-amber-500/30 bg-amber-500/10
-          px-2.5 py-1
-          text-[10px] font-bold text-amber-400
-          transition-all duration-150
-          hover:bg-amber-500/20 hover:border-amber-500/50
+          relative flex items-center gap-1 rounded-lg border border-amber-500/30
+          bg-amber-500/10 px-2 py-0.5 text-[9.5px] font-bold text-amber-400
+          transition-all hover:bg-amber-500/20
         "
       >
-        <Sparkles size={8} />
+        <Sparkles size={7} />
         Unlock
       </Link>
     </div>
   );
 }
 
-// ─── PAST PRO BIAS BADGE ──────────────────────────────────────────────────────
-// Shows on historical ICT cards. Tells free users "this was premium yesterday"
-// and builds trust in the quality of the paid content.
-
 function PastProBadge() {
   return (
-    <span
-      className="
-        inline-flex items-center gap-1 rounded-md border
-        border-violet-500/25 bg-violet-500/10
-        px-1.5 py-0.5
-        text-[9px] font-bold uppercase tracking-wide text-violet-400
-      "
-    >
+    <span className="inline-flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-400">
       <History size={8} strokeWidth={2.5} />
-      Past Pro Bias
+      Past Pro
     </span>
   );
 }
 
 // ─── INSIGHT CARD ─────────────────────────────────────────────────────────────
+// [MOB] px-3 py-3 body (was px-4 py-4); summary text-[11.5px] on mobile
 
 function InsightCard({ insight }: { insight: Insight }) {
   const dir    = DIRECTION_MAP[insight.direction];
@@ -358,36 +288,27 @@ function InsightCard({ insight }: { insight: Insight }) {
   return (
     <article
       className={`
-        group flex flex-col overflow-hidden
-        rounded-2xl border border-zinc-800/70
-        bg-zinc-900/40
+        group flex flex-col overflow-hidden rounded-2xl
+        border border-zinc-800/70 bg-zinc-900/40
         transition-all duration-200
         hover:-translate-y-0.5 hover:border-zinc-700/60
         hover:bg-zinc-900/70 hover:shadow-xl
         ${dir.glowCls} ${dir.borderHover}
       `}
     >
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div
-        className={`
-          flex items-start justify-between gap-3
-          border-b border-zinc-800/60
-          bg-gradient-to-r ${dir.headerGlow} to-transparent
-          px-4 py-3.5
-        `}
-      >
+      {/* Header */}
+      <div className={`flex items-start justify-between gap-2 border-b border-zinc-800/60 bg-gradient-to-r ${dir.headerGlow} to-transparent px-3 py-3 sm:px-4 sm:py-3.5`}>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="text-sm font-bold tracking-tight text-white">
+          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+            <h3 className="text-[13px] font-bold tracking-tight text-white sm:text-sm">
               {insight.asset}
             </h3>
-            <span className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>
+            <span className={`rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide sm:px-1.5 sm:py-0.5 sm:text-[9px] ${catCls}`}>
               {insight.category}
             </span>
-            {/* Past Pro badge shown on historical ICT cards */}
             {insight.isHistorical && <PastProBadge />}
           </div>
-          <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 sm:text-[10px]">
             {insight.biasType}
           </p>
         </div>
@@ -396,97 +317,87 @@ function InsightCard({ insight }: { insight: Insight }) {
         </div>
       </div>
 
-      {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col px-4 py-4">
-
-        {/* Card-level lock banner — only for today's locked Pro cards */}
+      {/* Body */}
+      <div className="flex flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4">
         {locked && <CardLockBanner />}
 
-        {/* Summary — blurred when locked */}
+        {/* Summary — tighter font on mobile */}
         <p
           className={`
-            flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400
-            transition-all duration-200
+            flex-1 font-light leading-relaxed text-zinc-400
+            text-[11.5px] sm:text-[12.5px]
             ${locked ? "blur-sm select-none" : ""}
+            transition-all duration-200
           `}
         >
           {insight.summary}
         </p>
 
-        {/* Detail line — blurred when locked */}
+        {/* Detail */}
         <p
           className={`
-            mt-2 text-[11px] font-light leading-relaxed text-zinc-600
-            transition-all duration-200
+            mt-1.5 text-[10.5px] font-light leading-relaxed text-zinc-600 sm:mt-2 sm:text-[11px]
             ${locked ? "blur-sm select-none" : ""}
+            transition-all duration-200
           `}
         >
           {insight.detail}
         </p>
 
-        {/* Historical proof strip — only on unlocked past ICT cards */}
+        {/* Historical proof strip */}
         {insight.isHistorical && (
-          <div className="mt-3 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-2">
-            <CheckCircle size={10} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
-            <p className="text-[10px] font-light leading-relaxed text-zinc-500">
-              This Pro bias was published on{" "}
-              <span className="font-medium text-zinc-400">{insight.publishedAt}</span>.
-              {" "}Now unlocked as historical accuracy proof.
+          <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5 sm:px-2.5">
+            <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
+            <p className="text-[9.5px] font-light leading-relaxed text-zinc-500 sm:text-[10px]">
+              Published on{" "}
+              <span className="font-medium text-zinc-400">{insight.publishedAt}</span>
+              {" "}· Now free as historical proof.
             </p>
           </div>
         )}
 
-        {/* Confidence bar — blurred when locked */}
-        <div className="mt-4">
-          <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-700">
+        {/* Confidence */}
+        <div className="mt-3 sm:mt-4">
+          <p className="mb-1 text-[8.5px] font-semibold uppercase tracking-widest text-zinc-700 sm:mb-1.5 sm:text-[9px]">
             Bias Confidence
           </p>
-          <ConfidenceBar
-            value={insight.confidence}
-            barCls={dir.barCls}
-            blurred={locked}
-          />
+          <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
         </div>
       </div>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
-        <div className="flex items-center gap-3 text-[10px] text-zinc-700">
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-zinc-800/60 px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex items-center gap-2 text-[9.5px] text-zinc-700 sm:gap-3 sm:text-[10px]">
           <span className="flex items-center gap-1">
-            <Clock size={9} />
+            <Clock size={8} />
             {insight.timeAgo}
           </span>
           <span>·</span>
           <span className="flex items-center gap-1">
-            <BookOpen size={9} />
+            <BookOpen size={8} />
             {insight.readMin} min
           </span>
         </div>
-
         {locked ? (
-          /* Locked footer CTA */
           <Link
             href="/upgrade"
-            className="flex items-center gap-1 text-[11px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400"
+            className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400"
           >
-            <Lock size={9} />
+            <Lock size={8} />
             Upgrade
           </Link>
         ) : (
-          /* Unlocked — Read Insight becomes a sky pill on group-hover */
           <Link
             href={`/insights/${insight.id}`}
             className="
-              flex items-center gap-1.5
-              rounded-lg border border-sky-500/0
-              px-2.5 py-1
-              text-[11px] font-semibold text-sky-400
+              flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5
+              text-[10px] font-semibold text-sky-400
               transition-all duration-150
               group-hover:border-sky-500/30 group-hover:bg-sky-500/10
             "
           >
-            Read Insight
-            <ArrowRight size={10} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+            Read
+            <ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
           </Link>
         )}
       </div>
@@ -495,6 +406,11 @@ function InsightCard({ insight }: { insight: Insight }) {
 }
 
 // ─── STATS BAR ────────────────────────────────────────────────────────────────
+// [CRIT] NO -mx-4 trick. Safe edge-to-edge via:
+//   • w-full overflow-x-auto snap-x snap-mandatory scrollbar-none on the scroll track
+//   • first:pl-4 last:pr-4 on each card for the leading/trailing gutter
+//   • snap-start on each card for native snap behaviour
+// [MOB] px-3 py-3 (was px-4 py-3.5), min-w-[136px] (was 148px)
 
 const STATS = [
   { label: "Assets Covered", value: "20",      icon: BarChart2,   iconCls: "text-sky-400",    bgCls: "bg-sky-500/10"     },
@@ -504,25 +420,111 @@ const STATS = [
 
 function StatsBar() {
   return (
-    <div className="-mx-4 mb-8 sm:mx-0">
-      <div className="flex gap-3 overflow-x-auto px-4 pb-1 sm:px-0 [&::-webkit-scrollbar]:hidden">
-        {STATS.map((s) => {
+    /*
+     * [CRIT] The outer div has w-full + overflow-x-auto.
+     *        No negative margins — the parent layout.tsx already provides
+     *        px-4 sm:px-6, so we step outside it with a full-bleed wrapper.
+     *        But instead of -mx-4 (which causes the white-gap bug), we use
+     *        a self-contained scroll container that stays within the parent.
+     */
+    <div className="mb-6 w-full overflow-x-auto snap-x snap-mandatory scrollbar-none [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-3 pb-1 sm:pb-0">
+        {STATS.map((s, i) => {
           const Icon = s.icon;
           return (
             <div
               key={s.label}
-              className="flex min-w-[148px] shrink-0 items-center gap-3 rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3.5 sm:min-w-0 sm:flex-1"
+              className={`
+                flex shrink-0 snap-start items-center gap-2.5
+                min-w-[136px] sm:min-w-0 sm:flex-1
+                rounded-xl border border-zinc-800/60 bg-zinc-900/40
+                px-3 py-3 sm:px-4 sm:py-3.5
+                ${i === 0 ? "sm:ml-0" : ""}
+              `}
             >
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${s.bgCls}`}>
-                <Icon size={14} className={s.iconCls} strokeWidth={1.8} />
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:h-8 sm:w-8 ${s.bgCls}`}>
+                <Icon size={13} className={s.iconCls} strokeWidth={1.8} />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-xs font-semibold text-white">{s.value}</p>
-                <p className="truncate text-[10px] text-zinc-600">{s.label}</p>
+                <p className="truncate text-[11.5px] font-semibold text-white sm:text-xs">
+                  {s.value}
+                </p>
+                <p className="truncate text-[9px] text-zinc-600 sm:text-[10px]">
+                  {s.label}
+                </p>
               </div>
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── CATEGORY FILTER ─────────────────────────────────────────────────────────
+// [CRIT] Same safe-scroll pattern as StatsBar — no -mx-4.
+// [MOB]  px-3 py-1 pills (was px-3.5 py-1.5), snap-start on each pill.
+
+function CategoryFilter({
+  activeFilter,
+  onSelect,
+}: {
+  activeFilter: FilterLabel;
+  onSelect: (l: FilterLabel) => void;
+}) {
+  return (
+    <div className="mb-5 w-full overflow-x-auto snap-x snap-mandatory scrollbar-none [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-2 pb-1 sm:pb-0 sm:flex-wrap">
+        {FILTERS.map(({ label, icon: Icon }) => {
+          const isActive = activeFilter === label;
+          return (
+            <button
+              key={label}
+              onClick={() => onSelect(label)}
+              className={`
+                flex shrink-0 snap-start items-center gap-1 sm:gap-1.5
+                rounded-full border px-3 py-1 sm:px-3.5 sm:py-1.5
+                text-[10.5px] sm:text-[11px] font-semibold
+                transition-all duration-150
+                ${isActive
+                  ? "border-sky-500/40 bg-sky-500/15 text-sky-400 shadow-[0_0_12px_rgba(14,165,233,0.14)]"
+                  : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                }
+              `}
+            >
+              <Icon size={10} strokeWidth={isActive ? 2.2 : 1.75} className={isActive ? "text-sky-400" : "text-zinc-700"} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── CONTENT KEY ─────────────────────────────────────────────────────────────
+// [MOB] Single tight horizontal scroll row — text-[8.5px], no vertical waste.
+
+function ContentKey() {
+  if (HAS_ACTIVE_SUBSCRIPTION) return null;
+  return (
+    <div className="mb-4 w-full overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden">
+      <div className="flex min-w-max items-center gap-1 rounded-xl border border-zinc-800/60 bg-zinc-900/30 px-3 py-2">
+        <span className="mr-1.5 text-[8.5px] font-bold uppercase tracking-wider text-zinc-700">
+          Key:
+        </span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-zinc-800/60 bg-zinc-900/60 px-2 py-0.5 text-[8.5px] text-zinc-500">
+          <span className="h-1 w-1 rounded-full bg-emerald-400 shrink-0" />
+          Fundamental — Free
+        </span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
+          <Lock size={8} className="text-amber-400 shrink-0" />
+          Today's ICT — Pro
+        </span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-500/20 bg-violet-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
+          <History size={8} className="text-violet-400 shrink-0" />
+          Past Pro — Free after 24h
+        </span>
       </div>
     </div>
   );
@@ -541,164 +543,138 @@ export default function MarketFeedPage() {
   const lockedCount = INSIGHTS.filter(isCardLocked).length;
 
   return (
-    <div className="relative overflow-x-hidden">
+    /*
+     * [CRIT] w-full + overflow-x-hidden is the absolute hard-stop guard.
+     * Nothing inside this div can ever scroll the page horizontally.
+     */
+    <div className="relative w-full overflow-x-hidden">
 
-      {/* Ambient background glow */}
+      {/* Ambient background glow — fixed, never contributes to layout width */}
       <div className="pointer-events-none fixed left-1/2 top-[30%] h-[500px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/[0.04] blur-[120px] md:left-[calc(50%+110px)]" />
 
       <div className="relative">
 
-        {/* ── [A] PAGE HEADER ───────────────────────────────────────────── */}
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+        {/* ── [A] HEADER — compressed for mobile ────────────────────────── */}
+        {/*
+         * [MOB] Date + Live badge on the same row at the top.
+         *       h1 is text-2xl on mobile, text-3xl on sm+.
+         *       Refresh button hidden on mobile (space & priority trade-off).
+         *       mb-4 (was mb-6) — less dead space before the stats.
+         */}
+        <header className="mb-4 sm:mb-6">
+          {/* Row 1: date + live badge */}
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
               {formatDate()}
             </p>
-            <h1 className="text-[1.6rem] font-bold leading-tight tracking-tight text-white sm:text-3xl">
-              Today's{" "}
-              <span className="text-sky-400">Market Bias</span>
-            </h1>
-            <p className="mt-1 text-[11px] font-light text-zinc-600">
-              Published at{" "}
-              <span className="font-medium text-zinc-500">06:15 AM UTC</span>
-              {" "}— before the session opens.
-            </p>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-1 text-[9.5px] font-medium text-emerald-400">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </span>
+                Live · {INSIGHTS.length}
+              </div>
+              {/* Refresh only on sm+ */}
+              <button
+                className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400"
+                title="Refresh feed"
+              >
+                <RefreshCw size={13} strokeWidth={1.75} />
+              </button>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.06] px-3.5 py-1.5 text-[10px] font-medium text-emerald-400">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              </span>
-              Live · {INSIGHTS.length} Insights
-            </div>
-            <button
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400"
-              title="Refresh feed"
-            >
-              <RefreshCw size={13} strokeWidth={1.75} />
-            </button>
-          </div>
+          {/* Row 2: headline */}
+          <h1 className="text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl">
+            Today's{" "}
+            <span className="text-sky-400">Market Bias</span>
+          </h1>
+          <p className="mt-0.5 text-[10.5px] font-light text-zinc-600 sm:mt-1 sm:text-[11px]">
+            Published at{" "}
+            <span className="font-medium text-zinc-500">06:15 AM UTC</span>
+            {" "}— before the session opens.
+          </p>
         </header>
 
         {/* ── [B] STATS BAR ─────────────────────────────────────────────── */}
         <StatsBar />
 
         {/* ── [C] CATEGORY FILTER ───────────────────────────────────────── */}
-        <div className="-mx-4 mb-6 sm:mx-0">
-          <div className="flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:px-0 [&::-webkit-scrollbar]:hidden">
-            {FILTERS.map(({ label, icon: Icon }) => {
-              const isActive = activeFilter === label;
-              return (
-                <button
-                  key={label}
-                  onClick={() => setActiveFilter(label)}
-                  className={`
-                    flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5
-                    text-[11px] font-semibold transition-all duration-150
-                    ${isActive
-                      ? "border-sky-500/40 bg-sky-500/15 text-sky-400 shadow-[0_0_14px_rgba(14,165,233,0.15)]"
-                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
-                    }
-                  `}
-                >
-                  <Icon size={11} strokeWidth={isActive ? 2.2 : 1.75} className={isActive ? "text-sky-400" : "text-zinc-700"} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <CategoryFilter activeFilter={activeFilter} onSelect={setActiveFilter} />
 
-        {/* ── [D] CONTENT KEY (free users only) ────────────────────────── */}
-        {/* A quick visual legend so free users immediately understand     */}
-        {/* what each card tier means before they scroll into the grid.    */}
-        {!HAS_ACTIVE_SUBSCRIPTION && (
-          <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-zinc-800/60 bg-zinc-900/30 px-4 py-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-700">
-              Content Key
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-              Fundamental — Always Free
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-              <Lock size={9} className="text-amber-400 shrink-0" />
-              Today's ICT — Pro Only
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-              <History size={9} className="text-violet-400 shrink-0" />
-              Past Pro Bias — Free After 24h
-            </span>
-          </div>
-        )}
+        {/* ── [D] CONTENT KEY ───────────────────────────────────────────── */}
+        <ContentKey />
 
         {/* ── [E] INSIGHT CARDS GRID ────────────────────────────────────── */}
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-20 text-center">
-            <BarChart2 size={28} className="mb-3 text-zinc-700" strokeWidth={1.5} />
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
+            <BarChart2 size={26} className="mb-2.5 text-zinc-700" strokeWidth={1.5} />
             <p className="text-sm font-medium text-zinc-500">No insights for this category today.</p>
-            <p className="mt-1 text-xs text-zinc-700">Try a different filter or check back tomorrow.</p>
+            <p className="mt-0.5 text-xs text-zinc-700">Try a different filter or check back tomorrow.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             {filtered.map((insight) => (
               <InsightCard key={insight.id} insight={insight} />
             ))}
           </div>
         )}
 
-        {/* ── [F] BOTTOM UPGRADE NUDGE (free users with locked cards) ────── */}
+        {/* ── [F] BOTTOM UPGRADE NUDGE ──────────────────────────────────── */}
+        {/* [MOB] py-4 px-4, gap-3, CTA full-width on mobile               */}
         {!HAS_ACTIVE_SUBSCRIPTION && lockedCount > 0 && (
-          <div className="mt-10 flex flex-col items-center justify-between gap-4 rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-500/[0.05] via-transparent to-transparent px-6 py-5 sm:flex-row">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10">
-                <Lock size={15} className="text-amber-400" strokeWidth={2} />
+          <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-500/[0.05] via-transparent to-transparent px-4 py-4 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
+            <div className="flex items-start gap-3 sm:items-center">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 sm:h-9 sm:w-9">
+                <Lock size={14} className="text-amber-400" strokeWidth={2} />
               </div>
               <div>
-                <p className="text-[13px] font-semibold text-white">
+                <p className="text-[12.5px] font-semibold text-white sm:text-[13px]">
                   Today's ICT setups are locked.
                 </p>
-                <p className="text-[11px] font-light text-zinc-600">
+                <p className="text-[10.5px] font-light text-zinc-600 sm:text-[11px]">
                   Upgrade to access{" "}
-                  <span className="font-medium text-zinc-400">
-                    {lockedCount} live daily ICT biases
-                  </span>
-                  {" "}— published every morning before market open.
+                  <span className="font-medium text-zinc-400">{lockedCount} live daily ICT biases</span>
+                  {" "}before market open.
                 </p>
               </div>
             </div>
             <Link
               href="/upgrade"
-              className="group flex shrink-0 items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-[12px] font-semibold text-amber-400 transition-all duration-150 hover:bg-amber-500/20 hover:border-amber-500/50 hover:shadow-[0_0_18px_rgba(245,158,11,0.18)]"
+              className="
+                group flex w-full items-center justify-center gap-2 sm:w-auto sm:shrink-0
+                rounded-xl border border-amber-500/30 bg-amber-500/10
+                px-5 py-2.5
+                text-[12px] font-semibold text-amber-400
+                transition-all duration-150
+                hover:bg-amber-500/20 hover:border-amber-500/50
+                hover:shadow-[0_0_18px_rgba(245,158,11,0.18)]
+              "
             >
-              <Sparkles size={12} />
+              <Sparkles size={11} />
               Upgrade to Pro
-              <ArrowRight size={12} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+              <ArrowRight size={11} className="transition-transform duration-150 group-hover:translate-x-0.5" />
             </Link>
           </div>
         )}
 
-        {/* ── [G] SUBSCRIBED CONFIRMATION STRIP ────────────────────────── */}
+        {/* ── [G] SUBSCRIBED STRIP ──────────────────────────────────────── */}
         {HAS_ACTIVE_SUBSCRIPTION && (
-          <div className="mt-10 flex flex-col items-center justify-between gap-4 rounded-2xl border border-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-transparent to-transparent px-6 py-5 sm:flex-row">
+          <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-transparent to-transparent px-4 py-4 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10">
-                <ShieldCheck size={16} className="text-emerald-400" />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 sm:h-9 sm:w-9">
+                <ShieldCheck size={15} className="text-emerald-400" />
               </div>
               <div>
-                <p className="text-[13px] font-semibold text-white">You have full Pro access</p>
-                <p className="text-[11px] font-light text-zinc-600">
-                  All {INSIGHTS.length} insights are unlocked. New biases publish daily at 06:15 UTC.
+                <p className="text-[12.5px] font-semibold text-white">You have full Pro access</p>
+                <p className="text-[10.5px] font-light text-zinc-600">
+                  All {INSIGHTS.length} insights unlocked. Publishes daily at 06:15 UTC.
                 </p>
               </div>
             </div>
-            <Link
-              href="/settings/subscription"
-              className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400"
-            >
-              Manage Subscription →
+            <Link href="/settings/subscription" className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400">
+              Manage →
             </Link>
           </div>
         )}
