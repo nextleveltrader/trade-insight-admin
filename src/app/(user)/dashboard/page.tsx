@@ -2,28 +2,35 @@
 
 // src/app/(user)/dashboard/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed  v6  "Native Separator Pattern"
+// TradeInsight Daily — Market Feed  v7  "Fluid Responsive Grid"
 //
-// v6 changes vs v5 (business logic & mock data UNCHANGED):
+// v7 changes vs v6 (business logic & mock data UNCHANGED):
 //
-//   [MOB] INSIGHT FEED — NATIVE APP SEPARATOR PATTERN
-//     • Removed `divide-y divide-zinc-800/60` from the grid container.
-//       The parent-level divider was too faint against zinc-950 in dark mode.
-//     • Each mobile list item now carries its own separation chrome:
-//         – `bg-zinc-900/30`         → lifts the row off the page bg
-//         – `border-t border-zinc-800/40` → crisp top edge (contrast anchor)
-//         – `border-b-[6px] border-b-zinc-950` → thick "gap" between rows,
-//           identical to the separator gap pattern used by Twitter/X, YouTube
-//           and Binance. The zinc-950 matches the page body exactly so the
-//           gap reads as dead space — clear, unambiguous item boundary.
-//         – `py-4`                   → slightly more vertical breathing room
-//           (was py-3.5)
-//     • Grid container simplified to:
-//       `-mx-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3`
-//       No divide classes needed anymore.
+//   [GRID] FLUID RESPONSIVE COLUMN SYSTEM
+//     • Mobile  (< 640px)  : 1-col "Edge-to-Edge List View" — unchanged.
+//       `-mx-4` bleed + native separator pattern fully preserved.
+//     • sm  (640 – 1023px) : 2 columns (`sm:grid-cols-2`).
+//       Covers vertical PC monitors, portrait tablets, narrow browser windows.
+//     • lg  (1024 – 1279px): 3 columns (`lg:grid-cols-3`).
+//       Standard laptop / desktop viewports.
+//     • xl  (1280 – 1535px): 4 columns (`xl:grid-cols-4`).
+//       Wide desktop monitors.
+//     • 2xl (1536 px+)     : 5 columns (`2xl:grid-cols-5`).
+//       Ultra-wide / dual-monitor split-view setups.
 //
-//   [KEEP] All v5 changes (stats bar, header compression, desktop card layout,
-//          freemium gates) — pixel-identical on sm+.
+//   [GAP]  gap-4 on sm–lg, gap-5 on xl+ — keeps spacing professional without
+//          feeling cavernous at the wider breakpoints.
+//
+//   [OVERFLOW FIX]
+//     • Root page div retains `w-full overflow-x-hidden`.
+//     • Grid container: `-mx-4` only when in mobile list mode; `sm:mx-0`
+//       resets it to the normal block flow. Combined with the layout's
+//       max-w-[1800px] cap and overflow-x-hidden guards this makes
+//       horizontal scrollbars structurally impossible at all breakpoints.
+//
+//   [KEEP] All v6 changes — stats bar, header compression, card-level
+//          blur/lock UI, freemium gates — pixel-identical on sm+.
+//          Mobile list-view (thick separator, bg-zinc-900/30) unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -679,7 +686,7 @@ export default function MarketFeedPage() {
          */}
         <header className="mb-4 sm:mb-6">
 
-          {/* Row 1: date + live badge + refresh (unchanged from v4) */}
+          {/* Row 1: date + live badge + refresh */}
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
               {formatDate()}
@@ -727,12 +734,30 @@ export default function MarketFeedPage() {
 
         {/* ── [E] INSIGHT FEED ──────────────────────────────────────────── */}
         {/*
-         * MOBILE  : `-mx-4` bleeds to screen edges. Each InsightCard carries
-         *           its own bg + border-t + thick border-b-[6px] border-b-zinc-950
-         *           separator — no divide-y needed on the container.
+         * [v7] FLUID RESPONSIVE GRID
          *
-         * DESKTOP : `sm:mx-0` resets the bleed. `sm:grid sm:grid-cols-2 sm:gap-4`
-         *           restores the floating card grid. lg:grid-cols-3 unchanged.
+         * Mobile  (< 640px)   : -mx-4 bleed, no grid.
+         *   Each InsightCard renders its own mobile list item (sm:hidden).
+         *   The thick border-b-[6px] border-b-zinc-950 separator pattern is
+         *   fully preserved — no divide-y needed on the container.
+         *
+         * sm  (640–1023px)    : sm:mx-0 resets the bleed.
+         *   sm:grid + sm:grid-cols-2 + sm:gap-4
+         *   Handles vertical PC monitors / narrow browser windows cleanly.
+         *
+         * lg  (1024–1279px)   : lg:grid-cols-3
+         *   Standard laptop / desktop. Unchanged from v6.
+         *
+         * xl  (1280–1535px)   : xl:grid-cols-4 + xl:gap-5
+         *   Wide desktop monitors get a 4th column and slightly wider gutters.
+         *
+         * 2xl (1536 px+)      : 2xl:grid-cols-5
+         *   Ultra-wide / dual-monitor setups fill the viewport properly.
+         *   layout.tsx max-w-[1800px] ensures cards never become too narrow.
+         *
+         * The three-tier overflow guard (page root → <main> → shell div)
+         * from v5/v6 means horizontal scrollbars are structurally impossible
+         * at every breakpoint regardless of content width.
          */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
@@ -746,6 +771,8 @@ export default function MarketFeedPage() {
               -mx-4
               sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4
               lg:grid-cols-3
+              xl:grid-cols-4 xl:gap-5
+              2xl:grid-cols-5
             "
           >
             {filtered.map((insight) => (
