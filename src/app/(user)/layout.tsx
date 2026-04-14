@@ -1,18 +1,24 @@
 // src/app/(user)/layout.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — User Dashboard Layout Wrapper  v6
+// TradeInsight Daily — User Dashboard Layout Wrapper  v7
 //
-// v6 changes vs v5:
-//   [GRID] ULTRA-WIDE MAX-WIDTH EXPANSION
-//     • Inner wrapper: max-w-[1200px] → max-w-[1800px]
-//       Lets xl:grid-cols-4 and 2xl:grid-cols-5 actually breathe at wide
-//       viewports instead of being artificially capped at 1200 px.
-//     • px padding on the inner wrapper widened: sm:px-6 → sm:px-8 so
-//       cards don't hug the edges on large monitors.
+// v7 changes vs v6:
+//   [CRIT] SIDEBAR WIDTH MATH FIX — right-side cutoff on desktop
+//     • <main>: replaced `w-full md:ml-[220px]` with
+//       `w-full md:w-[calc(100%-220px)] md:ml-[220px]`.
 //
-//   [OVERFLOW] All v5 overflow-x-hidden guards are preserved unchanged.
-//   Everything else (sidebar offset, mobile pb, fonts, animations) is
-//   identical to v5 — no regressions.
+//       Root cause: `w-full` resolves to 100vw on the block axis. Adding
+//       `md:ml-[220px]` on top pushes the right edge to 100vw + 220px,
+//       exceeding the viewport and cutting off the rightmost grid columns.
+//
+//       Fix: at md+ the explicit width is clamped to exactly
+//       `100% − 220px`, so left-edge + width = 100vw precisely.
+//       On mobile (< md) `w-full` remains correct because there is no
+//       sidebar offset.
+//
+//   [v6 KEPT] Ultra-wide max-w-[1800px] expansion and xl:px-8 padding.
+//   [v5 KEPT] All overflow-x-hidden guards on shell div and <main>.
+//   Fonts, animations, sidebar offset, mobile pb — no regressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Metadata } from "next";
@@ -91,8 +97,9 @@ export default function UserLayout({
 
         {/* ── Main Content Area ─────────────────────────────────────────── */}
         {/*
-         * [CRIT v5] overflow-x-hidden + w-full — SECONDARY guard.
-         * ml-[220px] shifts the main area right of the sidebar on md+.
+         * [CRIT v7] w-full on mobile; md:w-[calc(100%-220px)] + md:ml-[220px]
+         * on desktop. The calc() ensures left-edge (220px) + width (100%-220px)
+         * = exactly 100vw — no right-side overflow, no cut-off grid columns.
          * pb-[72px] keeps content above the mobile bottom nav on small screens.
          * min-h-screen fills the background on short pages.
          *
@@ -103,7 +110,7 @@ export default function UserLayout({
           className="
             relative
             w-full overflow-x-hidden
-            md:ml-[220px]
+            md:w-[calc(100%-220px)] md:ml-[220px]
             pb-[72px] md:pb-0
             min-h-screen
           "
