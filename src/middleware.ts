@@ -1,39 +1,59 @@
+// src/middleware.ts
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
   const { nextUrl } = req;
-  const isLoggedIn = !!req.auth; // ইউজার লগইন করা থাকলে এটি true হবে
+  const isLoggedIn = !!req.auth; // Auth.js ইউজার লগইন চেক
+  const user = req.auth?.user;
 
-  // ১. চেক করছি ইউজার কোন পেজে যেতে চাচ্ছে
-  const isLoginPage = nextUrl.pathname.startsWith('/admin/login');
-  
-  // আমরা /admin এর সব পেজ প্রটেক্ট করব, শুধু login পেজ বাদে
-  const isAdminRoute = nextUrl.pathname.startsWith('/admin') && !isLoginPage;
-  
-  // ভবিষ্যতের জন্য ইউজার ড্যাশবোর্ডও প্রটেক্ট করে রাখলাম
-  const isUserDashboardRoute = nextUrl.pathname.startsWith('/dashboard');
+  // ─── ১. অ্যাডমিন প্যানেল লজিক (আপনার আগের কাস্টম কুকি সিস্টেম) ──────────
+  if (nextUrl.pathname.startsWith('/admin')) {
+    const isAdminLoginPage = nextUrl.pathname === '/admin/login';
+    const hasAdminCookie = req.cookies.has('admin_session');
 
-  const isProtectedRoute = isAdminRoute || isUserDashboardRoute;
-
-  // ২. যদি প্রটেক্টেড পেজে যেতে চায় কিন্তু লগইন করা না থাকে
-  if (isProtectedRoute && !isLoggedIn) {
-    // তাকে লগইন পেজে পাঠিয়ে দিন
-    return NextResponse.redirect(new URL('/admin/login', req.url));
+    // অ্যাডমিন লগইন করা না থাকলে লগইন পেজে পাঠান
+    if (!hasAdminCookie && !isAdminLoginPage) {
+      return NextResponse.redirect(new URL('/admin/login', req.url));
+    }
+    // লগইন করা থাকলে লগইন পেজে ঢুকতে বাধা দিন
+    if (hasAdminCookie && isAdminLoginPage) {
+      return NextResponse.redirect(new URL('/admin/posts', req.url));
+    }
+    return NextResponse.next();
   }
 
-  // ৩. যদি অলরেডি লগইন করা থাকে এবং আবার লগইন পেজে যায়
-  if (isLoginPage && isLoggedIn) {
-    // তাকে সোজা অ্যাডমিন প্যানেলে পাঠিয়ে দিন
-    return NextResponse.redirect(new URL('/admin/posts', req.url));
+  // ─── ২. ইউজার অ্যাপ লজিক (Auth.js + Freemium Logic) ──────────────────
+  
+  // প্রটেক্টড রুটস (যেখানে লগইন ছাড়া ঢোকা যাবে না)
+  const isAuthPage = nextUrl.pathname === '/login' || nextUrl.pathname === '/register';
+  const protectedRoutes = ['/feed', '/calendar', '/saved', '/insights'];
+  const isUserProtectedRoute = protectedRoutes.some(path => nextUrl.pathname.startsWith(path));
+
+  // লগইন না করে প্রটেক্টড পেজে গেলে লগইন পেজে পাঠিয়ে দিন
+  if (isUserProtectedRoute && !isLoggedIn) {
+    return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  // ৪. এছাড়া বাকি সব পেজ (যেমন: /, /blog) সবার জন্য উন্মুক্ত থাকবে
+  // লগইন করা ইউজার লগইন পেজে যেতে চাইলে ফিডে পাঠান
+  if (isAuthPage && isLoggedIn) {
+    return NextResponse.redirect(new URL('/feed', req.url));
+  }
+
+  // [ভবিষ্যতের জন্য]: এখানে ট্রায়াল শেষ হয়েছে কি না তা চেক করে 
+  // আপনি চাইলে ইউজারকে /pricing পেজেও পাঠাতে পারেন।
+  /*
+  const now = Date.now();
+  if (isLoggedIn && !user?.isPro && user?.trialEndsAt && now > user.trialEndsAt) {
+     if (isUserProtectedRoute && nextUrl.pathname !== '/pricing') {
+        return NextResponse.redirect(new URL('/pricing', req.url));
+     }
+  }
+  */
+
   return NextResponse.next();
 });
 
-// এই ম্যাচারটি নিশ্চিত করবে যে মিডলওয়্যার শুধু পেজগুলোর ওপর কাজ করবে, 
-// কোনো ইমেজ বা স্ট্যাটিক ফাইলের ওপর নয় (NextAuth এর স্ট্যান্ডার্ড নিয়ম)
 export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
