@@ -12,6 +12,7 @@
 //              → jwt callback reads trial dates → redirect to /dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 import { useState, useTransition } from 'react';
 import { useRouter }               from 'next/navigation';
 import { signIn }                  from 'next-auth/react';
