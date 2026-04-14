@@ -1,18 +1,17 @@
 // src/app/(user)/layout.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — User Dashboard Layout Wrapper
+// TradeInsight Daily — User Dashboard Layout Wrapper  v5
 //
-// Renders:
-//   • UserSidebar  (fixed, 220 px)  — hidden on mobile (< md)
-//   • MobileNav    (fixed bottom)   — hidden on md+
-//   • <main>       — scrollable content area with correct offsets
+// v5 changes vs v4:
+//   [CRIT] OVERFLOW HARDENING
+//     • Shell div: added `overflow-x-hidden w-full` — prevents any child from
+//       ever pushing past 100vw and causing the white-gap scroll bug.
+//     • <main>: added `overflow-x-hidden w-full` as a secondary hard stop.
+//       Together these two guards make horizontal overflow structurally
+//       impossible regardless of what page.tsx renders.
 //
-// Offset logic:
-//   Desktop : ml-[220px]  (sidebar width)
-//   Mobile  : pb-[72px]   (bottom-nav height + safe-area buffer)
-//
-// The Outfit font is imported via a <style> tag consistent with the landing
-// page approach; in production swap for next/font/google in layout.tsx.
+//   Everything else (sidebar offset, mobile pb, fonts, animations) is
+//   identical to v4 — no regressions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Metadata } from "next";
@@ -56,8 +55,6 @@ function DashboardStyles() {
           }
 
           /* ── Sidebar active-item left-bar glow ───────────────────────── */
-          /* shadow-current doesn't work on arbitrary colours in Tailwind,  */
-          /* so we set the box-shadow via CSS for the active indicator bar. */
           [data-active-bar] {
             box-shadow: 0 0 8px 2px currentColor;
           }
@@ -79,17 +76,14 @@ export default function UserLayout({
       <DashboardStyles />
 
       {/*
-       * Root shell — full-height, zinc-950 background.
-       * Matches the landing page colour so the two pages share
-       * the same visual DNA.
+       * [CRIT v5] overflow-x-hidden + w-full on the outermost shell.
+       * This is the PRIMARY guard: no child element — regardless of how
+       * wide its intrinsic content is — can ever create a horizontal
+       * scrollbar or the white-gap artefact on the right edge of the screen.
        */}
-      <div className="min-h-screen bg-zinc-950 text-white antialiased selection:bg-sky-500/30 selection:text-sky-200">
+      <div className="min-h-screen w-full overflow-x-hidden bg-zinc-950 text-white antialiased selection:bg-sky-500/30 selection:text-sky-200">
 
         {/* ── Desktop Sidebar ────────────────────────────────────────────── */}
-        {/*
-         * Rendered server-side compatible wrapper.
-         * UserSidebar itself is 'use client' for usePathname.
-         */}
         <UserSidebar />
 
         {/* ── Mobile Bottom Nav ─────────────────────────────────────────── */}
@@ -97,31 +91,29 @@ export default function UserLayout({
 
         {/* ── Main Content Area ─────────────────────────────────────────── */}
         {/*
-         * ml-[220px] : offset from the fixed sidebar on md+ screens
-         * pb-[72px]  : breathing room above the mobile bottom nav
-         * min-h-screen ensures the bg fills even on short pages
+         * [CRIT v5] overflow-x-hidden + w-full here too — SECONDARY guard.
+         * ml-[220px] shifts the main area right of the sidebar on md+.
+         * pb-[72px] keeps content above the mobile bottom nav on small screens.
+         * min-h-screen fills the background on short pages.
          *
-         * overflow-y-auto is NOT set here — the native viewport scroll
-         * is preserved so the browser's own momentum-scrolling on iOS works.
+         * NOTE: overflow-y is intentionally NOT set — native viewport scroll
+         * is preserved for iOS momentum-scrolling.
          */}
         <main
           className="
             relative
+            w-full overflow-x-hidden
             md:ml-[220px]
             pb-[72px] md:pb-0
             min-h-screen
           "
         >
-          {/*
-           * Top accent line — matches the sidebar's top line so they
-           * feel like one continuous surface at the top of the viewport.
-           */}
+          {/* Top accent line */}
           <div className="pointer-events-none fixed inset-x-0 top-0 z-30 h-px bg-gradient-to-r from-transparent via-sky-500/20 to-transparent md:left-[220px]" />
 
           {/*
-           * Inner wrapper applies the page-enter animation.
-           * Max-width + horizontal padding keep content readable at
-           * any viewport width without overflowing into the sidebar.
+           * Inner wrapper: page-enter animation, max-width cap, horizontal
+           * padding. px-4 on mobile, px-6 on sm+.
            */}
           <div className="page-enter mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
             {children}

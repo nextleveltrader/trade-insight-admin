@@ -2,44 +2,34 @@
 
 // src/app/(user)/dashboard/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed v4  "Mobile-First High Density Fix"
+// TradeInsight Daily — Market Feed  v5  "Native Mobile List View"
 //
-// v4 changes (business logic & mock data unchanged from v3):
+// v5 changes vs v4 (business logic & mock data UNCHANGED):
 //
-//   [CRIT] OVERFLOW FIX
-//     • Root div: `w-full overflow-x-hidden` — absolute guard
-//     • Removed -mx-4 / px-4 bleed trick (the root cause of the white gap)
-//     • StatsBar + Filter: `w-full overflow-x-auto scrollbar-none snap-x snap-mandatory`
-//       with `first:pl-4 last:pr-4 sm:first:pl-0 sm:last:pr-0` spacers baked
-//       into the item itself — no negative-margin math needed
+//   [MOB] INSIGHT FEED — EDGE-TO-EDGE LIST VIEW
+//     • Grid container on mobile: `-mx-4 divide-y divide-zinc-800/60`
+//       bleeds to screen edges and uses CSS divide for separators — no cards.
+//     • `sm:mx-0 sm:divide-y-0 sm:grid sm:grid-cols-2 sm:gap-4` restores the
+//       floating card grid on desktop. lg:grid-cols-3 unchanged.
+//     • InsightCard: split into two layouts inside one <article>:
+//         – Mobile  (`sm:hidden`): flat list-item with px-4 py-3.5. All asset
+//           data, badge, direction badge on a SINGLE compressed row.
+//         – Desktop (`hidden sm:flex`): original gradient-header card layout,
+//           pixel-identical to v4.
+//     • All hover transforms restricted to `sm:hover:` — no layout-shift on
+//       mobile taps.
+//
+//   [MOB] STATS BAR — BORDERLESS METRIC ROW
+//     • Individual stat cards: `sm:rounded-xl sm:border sm:bg-zinc-900/40`
+//       (border/bg/rounded on desktop only). On mobile they render as clean
+//       floating metric pairs — icon + value + label, no card chrome.
 //
 //   [MOB] HEADER COMPRESSION
-//     • Date + live badge on same row (space-between)
-//     • h1 → text-2xl on mobile, sm:text-3xl on desktop
-//     • mb-6 → mb-4
-//     • Refresh button hidden on mobile (not critical for the reading flow)
+//     • "Published at 06:15 AM UTC" subtitle: `hidden sm:block` — removed on
+//       mobile to save vertical space. Date + live badge row retained.
 //
-//   [MOB] STATS BAR
-//     • snap-start on each card
-//     • px-3 py-3 instead of px-4 py-3.5 → more cards visible
-//     • min-w-[136px] (down from 148px)
-//
-//   [MOB] FILTER PILLS
-//     • snap-start on each pill
-//     • Slightly tighter px-3 py-1 (was px-3.5 py-1.5)
-//
-//   [MOB] CONTENT KEY
-//     • Collapsed to a single tight horizontal scroll row
-//     • text-[8.5px], py-2, no wasted vertical space
-//
-//   [MOB] INSIGHT CARDS
-//     • px-3 py-3 body padding (was px-4 py-4)
-//     • summary: text-[11.5px] sm:text-[12.5px]
-//     • CardLockBanner: flex-wrap + tighter spacing — safe on iPhone SE
-//
-//   [MOB] BOTTOM NUDGE
-//     • py-4 px-4 (was py-5 px-6), gap-3 (was gap-4)
-//     • CTA button full-width on mobile
+//   [KEEP] Desktop (`sm+`) layout, card styling, freemium gates, lock banners,
+//          confidence bars, historical strips — all pixel-identical to v4.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from "react";
@@ -68,7 +58,7 @@ import {
 // ─── SUBSCRIPTION GATE ────────────────────────────────────────────────────────
 const HAS_ACTIVE_SUBSCRIPTION = false;
 
-// ─── TYPES ────────────────────────────────────────────────────────────────────
+// ─── TYPES (unchanged) ────────────────────────────────────────────────────────
 
 type Direction   = "Bullish" | "Bearish" | "Neutral";
 type Category    = "Forex" | "Crypto" | "Indices" | "Commodities" | "Metals";
@@ -90,7 +80,7 @@ interface Insight {
   isHistorical: boolean;
 }
 
-// ─── MOCK DATA (unchanged from v3) ───────────────────────────────────────────
+// ─── MOCK DATA (unchanged) ────────────────────────────────────────────────────
 
 const INSIGHTS: Insight[] = [
   {
@@ -143,7 +133,7 @@ const INSIGHTS: Insight[] = [
   },
 ];
 
-// ─── FILTER TABS ─────────────────────────────────────────────────────────────
+// ─── FILTER TABS (unchanged) ──────────────────────────────────────────────────
 
 const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
   { label: "All",         icon: BarChart2  },
@@ -154,7 +144,7 @@ const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
   { label: "Metals",      icon: Gem        },
 ];
 
-// ─── DIRECTION CONFIG ─────────────────────────────────────────────────────────
+// ─── DIRECTION CONFIG (unchanged) ─────────────────────────────────────────────
 
 const DIRECTION_MAP: Record<
   Direction,
@@ -167,20 +157,20 @@ const DIRECTION_MAP: Record<
   Bullish: {
     Icon: TrendingUp,
     badgeCls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-    barCls: "bg-emerald-400", glowCls: "hover:shadow-emerald-500/20",
-    borderHover: "hover:border-emerald-500/30", headerGlow: "from-emerald-500/[0.05]",
+    barCls: "bg-emerald-400", glowCls: "sm:hover:shadow-emerald-500/20",
+    borderHover: "sm:hover:border-emerald-500/30", headerGlow: "from-emerald-500/[0.05]",
   },
   Bearish: {
     Icon: TrendingDown,
     badgeCls: "text-rose-400 bg-rose-500/10 border-rose-500/25",
-    barCls: "bg-rose-400", glowCls: "hover:shadow-rose-500/20",
-    borderHover: "hover:border-rose-500/30", headerGlow: "from-rose-500/[0.05]",
+    barCls: "bg-rose-400", glowCls: "sm:hover:shadow-rose-500/20",
+    borderHover: "sm:hover:border-rose-500/30", headerGlow: "from-rose-500/[0.05]",
   },
   Neutral: {
     Icon: Minus,
     badgeCls: "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
-    barCls: "bg-zinc-500", glowCls: "hover:shadow-zinc-500/10",
-    borderHover: "hover:border-zinc-600/40", headerGlow: "from-zinc-700/[0.05]",
+    barCls: "bg-zinc-500", glowCls: "sm:hover:shadow-zinc-500/10",
+    borderHover: "sm:hover:border-zinc-600/40", headerGlow: "from-zinc-700/[0.05]",
   },
 };
 
@@ -192,7 +182,7 @@ const CATEGORY_STYLE: Record<Category, string> = {
   Metals:      "text-amber-400  bg-amber-500/10  border-amber-500/20",
 };
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// ─── HELPERS (unchanged) ──────────────────────────────────────────────────────
 
 function formatDate() {
   return new Date().toLocaleDateString("en-US", {
@@ -204,7 +194,7 @@ function isCardLocked(i: Insight) {
   return i.isProOnly && !i.isHistorical && !HAS_ACTIVE_SUBSCRIPTION;
 }
 
-// ─── MICRO-COMPONENTS ────────────────────────────────────────────────────────
+// ─── MICRO-COMPONENTS (unchanged) ─────────────────────────────────────────────
 
 function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
@@ -216,7 +206,15 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   );
 }
 
-function ConfidenceBar({ value, barCls, blurred }: { value: number; barCls: string; blurred: boolean }) {
+function ConfidenceBar({
+  value,
+  barCls,
+  blurred,
+}: {
+  value: number;
+  barCls: string;
+  blurred: boolean;
+}) {
   return (
     <div className={`flex items-center gap-2 transition-all ${blurred ? "blur-sm select-none" : ""}`}>
       <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-zinc-800">
@@ -227,9 +225,7 @@ function ConfidenceBar({ value, barCls, blurred }: { value: number; barCls: stri
   );
 }
 
-// ─── CARD LOCK BANNER ────────────────────────────────────────────────────────
-// [MOB] flex-wrap so the Unlock button drops to its own line on iPhone SE
-//       instead of overflowing right.
+// ─── CARD LOCK BANNER (unchanged) ─────────────────────────────────────────────
 
 function CardLockBanner() {
   return (
@@ -278,7 +274,18 @@ function PastProBadge() {
 }
 
 // ─── INSIGHT CARD ─────────────────────────────────────────────────────────────
-// [MOB] px-3 py-3 body (was px-4 py-4); summary text-[11.5px] on mobile
+//
+// Renders TWO distinct layouts in one <article>:
+//
+//   Mobile  (sm:hidden)  — flat edge-to-edge list item.
+//     • No card chrome (no border, no rounded, no bg).
+//     • px-4 py-3.5 padding — aligns with the layout's px-4 gutter.
+//     • All key data on one compressed header row.
+//     • Dividers come from the parent container's `divide-y`.
+//
+//   Desktop (hidden sm:flex) — original floating card from v4.
+//     • Gradient header, body with lock banner, footer.
+//     • hover transforms restricted to sm:hover: to avoid mobile tap flash.
 
 function InsightCard({ insight }: { insight: Insight }) {
   const dir    = DIRECTION_MAP[insight.direction];
@@ -288,44 +295,56 @@ function InsightCard({ insight }: { insight: Insight }) {
   return (
     <article
       className={`
-        group flex flex-col overflow-hidden rounded-2xl
-        border border-zinc-800/70 bg-zinc-900/40
-        transition-all duration-200
-        hover:-translate-y-0.5 hover:border-zinc-700/60
-        hover:bg-zinc-900/70 hover:shadow-xl
+        group flex flex-col
+        sm:overflow-hidden sm:rounded-2xl
+        sm:border sm:border-zinc-800/70 sm:bg-zinc-900/40
+        sm:transition-all sm:duration-200
+        sm:hover:-translate-y-0.5 sm:hover:border-zinc-700/60
+        sm:hover:bg-zinc-900/70 sm:hover:shadow-xl
         ${dir.glowCls} ${dir.borderHover}
       `}
     >
-      {/* Header */}
-      <div className={`flex items-start justify-between gap-2 border-b border-zinc-800/60 bg-gradient-to-r ${dir.headerGlow} to-transparent px-3 py-3 sm:px-4 sm:py-3.5`}>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
-            <h3 className="text-[13px] font-bold tracking-tight text-white sm:text-sm">
-              {insight.asset}
-            </h3>
-            <span className={`rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide sm:px-1.5 sm:py-0.5 sm:text-[9px] ${catCls}`}>
-              {insight.category}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MOBILE LIST ITEM  — hidden on sm+
+          ══════════════════════════════════════════════════════════════ */}
+      <div className="flex flex-col px-4 py-3.5 sm:hidden">
+
+        {/* Row 1 ── Asset · Category · [Past Pro] · Direction (single line) */}
+        <div className="flex items-center gap-1.5">
+          <h3 className="shrink-0 text-[13.5px] font-bold tracking-tight text-white">
+            {insight.asset}
+          </h3>
+          <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide ${catCls}`}>
+            {insight.category}
+          </span>
+          {insight.isHistorical && (
+            <span className="shrink-0">
+              <PastProBadge />
             </span>
-            {insight.isHistorical && <PastProBadge />}
+          )}
+          {/* Direction badge pushed to the right */}
+          <span className="ml-auto shrink-0">
+            <DirectionBadge direction={insight.direction} />
+          </span>
+        </div>
+
+        {/* Row 2 ── Bias type label */}
+        <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600">
+          {insight.biasType}
+        </p>
+
+        {/* Lock banner (only for locked pro items) */}
+        {locked && (
+          <div className="mt-2.5">
+            <CardLockBanner />
           </div>
-          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 sm:text-[10px]">
-            {insight.biasType}
-          </p>
-        </div>
-        <div className="shrink-0 pt-0.5">
-          <DirectionBadge direction={insight.direction} />
-        </div>
-      </div>
+        )}
 
-      {/* Body */}
-      <div className="flex flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4">
-        {locked && <CardLockBanner />}
-
-        {/* Summary — tighter font on mobile */}
+        {/* Summary text */}
         <p
           className={`
-            flex-1 font-light leading-relaxed text-zinc-400
-            text-[11.5px] sm:text-[12.5px]
+            mt-2 text-[11.5px] font-light leading-relaxed text-zinc-400
             ${locked ? "blur-sm select-none" : ""}
             transition-all duration-200
           `}
@@ -333,84 +352,187 @@ function InsightCard({ insight }: { insight: Insight }) {
           {insight.summary}
         </p>
 
-        {/* Detail */}
-        <p
-          className={`
-            mt-1.5 text-[10.5px] font-light leading-relaxed text-zinc-600 sm:mt-2 sm:text-[11px]
-            ${locked ? "blur-sm select-none" : ""}
-            transition-all duration-200
-          `}
-        >
-          {insight.detail}
-        </p>
-
         {/* Historical proof strip */}
         {insight.isHistorical && (
-          <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5 sm:px-2.5">
+          <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5">
             <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
-            <p className="text-[9.5px] font-light leading-relaxed text-zinc-500 sm:text-[10px]">
-              Published on{" "}
+            <p className="text-[9.5px] font-light leading-relaxed text-zinc-500">
+              Published{" "}
               <span className="font-medium text-zinc-400">{insight.publishedAt}</span>
-              {" "}· Now free as historical proof.
+              {" "}· Now free.
             </p>
           </div>
         )}
 
-        {/* Confidence */}
-        <div className="mt-3 sm:mt-4">
-          <p className="mb-1 text-[8.5px] font-semibold uppercase tracking-widest text-zinc-700 sm:mb-1.5 sm:text-[9px]">
-            Bias Confidence
+        {/* Confidence bar */}
+        <div className="mt-2.5">
+          <p className="mb-1 text-[8px] font-semibold uppercase tracking-widest text-zinc-700">
+            Confidence
           </p>
           <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
         </div>
+
+        {/* Footer ── timestamp · read-time · CTA */}
+        <div className="mt-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-[9.5px] text-zinc-700">
+            <span className="flex items-center gap-1">
+              <Clock size={8} />
+              {insight.timeAgo}
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <BookOpen size={8} />
+              {insight.readMin} min
+            </span>
+          </div>
+          {locked ? (
+            <Link
+              href="/upgrade"
+              className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400"
+            >
+              <Lock size={8} />
+              Upgrade
+            </Link>
+          ) : (
+            <Link
+              href={`/insights/${insight.id}`}
+              className="flex items-center gap-1 text-[10px] font-semibold text-sky-400"
+            >
+              Read
+              <ArrowRight size={9} />
+            </Link>
+          )}
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t border-zinc-800/60 px-3 py-2.5 sm:px-4 sm:py-3">
-        <div className="flex items-center gap-2 text-[9.5px] text-zinc-700 sm:gap-3 sm:text-[10px]">
-          <span className="flex items-center gap-1">
-            <Clock size={8} />
-            {insight.timeAgo}
-          </span>
-          <span>·</span>
-          <span className="flex items-center gap-1">
-            <BookOpen size={8} />
-            {insight.readMin} min
-          </span>
+      {/* ══════════════════════════════════════════════════════════════════
+          DESKTOP CARD — hidden on mobile, shown on sm+
+          Pixel-identical to v4 card layout.
+          ══════════════════════════════════════════════════════════════ */}
+      <div className="hidden sm:flex sm:flex-1 sm:flex-col">
+
+        {/* Card Header */}
+        <div
+          className={`
+            flex items-start justify-between gap-2
+            border-b border-zinc-800/60
+            bg-gradient-to-r ${dir.headerGlow} to-transparent
+            px-4 py-3.5
+          `}
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="text-sm font-bold tracking-tight text-white">
+                {insight.asset}
+              </h3>
+              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>
+                {insight.category}
+              </span>
+              {insight.isHistorical && <PastProBadge />}
+            </div>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+              {insight.biasType}
+            </p>
+          </div>
+          <div className="shrink-0 pt-0.5">
+            <DirectionBadge direction={insight.direction} />
+          </div>
         </div>
-        {locked ? (
-          <Link
-            href="/upgrade"
-            className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400"
+
+        {/* Card Body */}
+        <div className="flex flex-1 flex-col px-4 py-4">
+          {locked && <CardLockBanner />}
+
+          <p
+            className={`
+              flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400
+              ${locked ? "blur-sm select-none" : ""}
+              transition-all duration-200
+            `}
           >
-            <Lock size={8} />
-            Upgrade
-          </Link>
-        ) : (
-          <Link
-            href={`/insights/${insight.id}`}
-            className="
-              flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5
-              text-[10px] font-semibold text-sky-400
-              transition-all duration-150
-              group-hover:border-sky-500/30 group-hover:bg-sky-500/10
-            "
+            {insight.summary}
+          </p>
+
+          <p
+            className={`
+              mt-2 text-[11px] font-light leading-relaxed text-zinc-600
+              ${locked ? "blur-sm select-none" : ""}
+              transition-all duration-200
+            `}
           >
-            Read
-            <ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
-          </Link>
-        )}
+            {insight.detail}
+          </p>
+
+          {insight.isHistorical && (
+            <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-1.5">
+              <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
+              <p className="text-[10px] font-light leading-relaxed text-zinc-500">
+                Published on{" "}
+                <span className="font-medium text-zinc-400">{insight.publishedAt}</span>
+                {" "}· Now free as historical proof.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-700">
+              Bias Confidence
+            </p>
+            <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
+          </div>
+        </div>
+
+        {/* Card Footer */}
+        <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
+          <div className="flex items-center gap-3 text-[10px] text-zinc-700">
+            <span className="flex items-center gap-1">
+              <Clock size={8} />
+              {insight.timeAgo}
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <BookOpen size={8} />
+              {insight.readMin} min
+            </span>
+          </div>
+          {locked ? (
+            <Link
+              href="/upgrade"
+              className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400"
+            >
+              <Lock size={8} />
+              Upgrade
+            </Link>
+          ) : (
+            <Link
+              href={`/insights/${insight.id}`}
+              className="
+                flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5
+                text-[10px] font-semibold text-sky-400
+                transition-all duration-150
+                group-hover:border-sky-500/30 group-hover:bg-sky-500/10
+              "
+            >
+              Read
+              <ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+            </Link>
+          )}
+        </div>
       </div>
+
     </article>
   );
 }
 
 // ─── STATS BAR ────────────────────────────────────────────────────────────────
-// [CRIT] NO -mx-4 trick. Safe edge-to-edge via:
-//   • w-full overflow-x-auto snap-x snap-mandatory scrollbar-none on the scroll track
-//   • first:pl-4 last:pr-4 on each card for the leading/trailing gutter
-//   • snap-start on each card for native snap behaviour
-// [MOB] px-3 py-3 (was px-4 py-3.5), min-w-[136px] (was 148px)
+//
+// [v5 MOBILE] Individual stat items have NO border/bg/rounded on mobile —
+// they render as clean floating metric pairs (icon · value · label) giving
+// a native finance-app feel.  `sm:rounded-xl sm:border sm:bg-zinc-900/40`
+// restores the card chrome on desktop.
+//
+// The outer scroll container retains `snap-x snap-mandatory` for smooth
+// native scroll on both platforms.
 
 const STATS = [
   { label: "Assets Covered", value: "20",      icon: BarChart2,   iconCls: "text-sky-400",    bgCls: "bg-sky-500/10"     },
@@ -420,27 +542,19 @@ const STATS = [
 
 function StatsBar() {
   return (
-    /*
-     * [CRIT] The outer div has w-full + overflow-x-auto.
-     *        No negative margins — the parent layout.tsx already provides
-     *        px-4 sm:px-6, so we step outside it with a full-bleed wrapper.
-     *        But instead of -mx-4 (which causes the white-gap bug), we use
-     *        a self-contained scroll container that stays within the parent.
-     */
     <div className="mb-6 w-full overflow-x-auto snap-x snap-mandatory scrollbar-none [&::-webkit-scrollbar]:hidden">
       <div className="flex gap-3 pb-1 sm:pb-0">
-        {STATS.map((s, i) => {
+        {STATS.map((s) => {
           const Icon = s.icon;
           return (
             <div
               key={s.label}
-              className={`
+              className="
                 flex shrink-0 snap-start items-center gap-2.5
-                min-w-[136px] sm:min-w-0 sm:flex-1
-                rounded-xl border border-zinc-800/60 bg-zinc-900/40
-                px-3 py-3 sm:px-4 sm:py-3.5
-                ${i === 0 ? "sm:ml-0" : ""}
-              `}
+                min-w-[120px] sm:min-w-0 sm:flex-1
+                px-3 py-2 sm:px-4 sm:py-3.5
+                sm:rounded-xl sm:border sm:border-zinc-800/60 sm:bg-zinc-900/40
+              "
             >
               <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:h-8 sm:w-8 ${s.bgCls}`}>
                 <Icon size={13} className={s.iconCls} strokeWidth={1.8} />
@@ -461,9 +575,7 @@ function StatsBar() {
   );
 }
 
-// ─── CATEGORY FILTER ─────────────────────────────────────────────────────────
-// [CRIT] Same safe-scroll pattern as StatsBar — no -mx-4.
-// [MOB]  px-3 py-1 pills (was px-3.5 py-1.5), snap-start on each pill.
+// ─── CATEGORY FILTER (unchanged from v4) ──────────────────────────────────────
 
 function CategoryFilter({
   activeFilter,
@@ -474,7 +586,7 @@ function CategoryFilter({
 }) {
   return (
     <div className="mb-5 w-full overflow-x-auto snap-x snap-mandatory scrollbar-none [&::-webkit-scrollbar]:hidden">
-      <div className="flex gap-2 pb-1 sm:pb-0 sm:flex-wrap">
+      <div className="flex gap-2 pb-1 sm:flex-wrap sm:pb-0">
         {FILTERS.map(({ label, icon: Icon }) => {
           const isActive = activeFilter === label;
           return (
@@ -502,8 +614,7 @@ function CategoryFilter({
   );
 }
 
-// ─── CONTENT KEY ─────────────────────────────────────────────────────────────
-// [MOB] Single tight horizontal scroll row — text-[8.5px], no vertical waste.
+// ─── CONTENT KEY (unchanged from v4) ──────────────────────────────────────────
 
 function ContentKey() {
   if (HAS_ACTIVE_SUBSCRIPTION) return null;
@@ -514,15 +625,15 @@ function ContentKey() {
           Key:
         </span>
         <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-zinc-800/60 bg-zinc-900/60 px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <span className="h-1 w-1 rounded-full bg-emerald-400 shrink-0" />
+          <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-400" />
           Fundamental — Free
         </span>
         <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <Lock size={8} className="text-amber-400 shrink-0" />
+          <Lock size={8} className="shrink-0 text-amber-400" />
           Today's ICT — Pro
         </span>
         <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-500/20 bg-violet-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <History size={8} className="text-violet-400 shrink-0" />
+          <History size={8} className="shrink-0 text-violet-400" />
           Past Pro — Free after 24h
         </span>
       </div>
@@ -544,25 +655,26 @@ export default function MarketFeedPage() {
 
   return (
     /*
-     * [CRIT] w-full + overflow-x-hidden is the absolute hard-stop guard.
-     * Nothing inside this div can ever scroll the page horizontally.
+     * Root guard: w-full + overflow-x-hidden. layout.tsx adds a second
+     * guard on <main> and the shell div, so horizontal overflow is
+     * impossible at every level.
      */
     <div className="relative w-full overflow-x-hidden">
 
-      {/* Ambient background glow — fixed, never contributes to layout width */}
+      {/* Ambient background glow */}
       <div className="pointer-events-none fixed left-1/2 top-[30%] h-[500px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/[0.04] blur-[120px] md:left-[calc(50%+110px)]" />
 
       <div className="relative">
 
-        {/* ── [A] HEADER — compressed for mobile ────────────────────────── */}
+        {/* ── [A] HEADER ────────────────────────────────────────────────── */}
         {/*
-         * [MOB] Date + Live badge on the same row at the top.
-         *       h1 is text-2xl on mobile, text-3xl on sm+.
-         *       Refresh button hidden on mobile (space & priority trade-off).
-         *       mb-4 (was mb-6) — less dead space before the stats.
+         * [v5 MOB] "Published at 06:15 AM UTC" subtitle is `hidden sm:block`.
+         * On mobile every pixel counts; the date row + live badge already
+         * give enough temporal context.
          */}
         <header className="mb-4 sm:mb-6">
-          {/* Row 1: date + live badge */}
+
+          {/* Row 1: date + live badge + refresh (unchanged from v4) */}
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
               {formatDate()}
@@ -575,9 +687,9 @@ export default function MarketFeedPage() {
                 </span>
                 Live · {INSIGHTS.length}
               </div>
-              {/* Refresh only on sm+ */}
+              {/* Refresh button: desktop only */}
               <button
-                className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400"
+                className="hidden h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400 sm:flex"
                 title="Refresh feed"
               >
                 <RefreshCw size={13} strokeWidth={1.75} />
@@ -590,7 +702,9 @@ export default function MarketFeedPage() {
             Today's{" "}
             <span className="text-sky-400">Market Bias</span>
           </h1>
-          <p className="mt-0.5 text-[10.5px] font-light text-zinc-600 sm:mt-1 sm:text-[11px]">
+
+          {/* Row 3: published-at sub-text — HIDDEN on mobile */}
+          <p className="mt-0.5 hidden text-[11px] font-light text-zinc-600 sm:mt-1 sm:block">
             Published at{" "}
             <span className="font-medium text-zinc-500">06:15 AM UTC</span>
             {" "}— before the session opens.
@@ -606,7 +720,16 @@ export default function MarketFeedPage() {
         {/* ── [D] CONTENT KEY ───────────────────────────────────────────── */}
         <ContentKey />
 
-        {/* ── [E] INSIGHT CARDS GRID ────────────────────────────────────── */}
+        {/* ── [E] INSIGHT FEED ──────────────────────────────────────────── */}
+        {/*
+         * MOBILE  : `-mx-4` bleeds to screen edges. `divide-y divide-zinc-800/60`
+         *           draws thin separators between items — no card borders.
+         *           Default block layout stacks items vertically.
+         *
+         * DESKTOP : `sm:mx-0` resets the bleed. `sm:divide-y-0` removes
+         *           dividers. `sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3`
+         *           restores the floating card grid.
+         */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
             <BarChart2 size={26} className="mb-2.5 text-zinc-700" strokeWidth={1.5} />
@@ -614,7 +737,14 @@ export default function MarketFeedPage() {
             <p className="mt-0.5 text-xs text-zinc-700">Try a different filter or check back tomorrow.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+          <div
+            className="
+              -mx-4 divide-y divide-zinc-800/60
+              sm:mx-0 sm:divide-y-0
+              sm:grid sm:grid-cols-2 sm:gap-4
+              lg:grid-cols-3
+            "
+          >
             {filtered.map((insight) => (
               <InsightCard key={insight.id} insight={insight} />
             ))}
@@ -622,7 +752,6 @@ export default function MarketFeedPage() {
         )}
 
         {/* ── [F] BOTTOM UPGRADE NUDGE ──────────────────────────────────── */}
-        {/* [MOB] py-4 px-4, gap-3, CTA full-width on mobile               */}
         {!HAS_ACTIVE_SUBSCRIPTION && lockedCount > 0 && (
           <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-500/[0.05] via-transparent to-transparent px-4 py-4 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
             <div className="flex items-start gap-3 sm:items-center">
@@ -673,7 +802,10 @@ export default function MarketFeedPage() {
                 </p>
               </div>
             </div>
-            <Link href="/settings/subscription" className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400">
+            <Link
+              href="/settings/subscription"
+              className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400"
+            >
               Manage →
             </Link>
           </div>
