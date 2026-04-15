@@ -1,4 +1,11 @@
-import { sqliteTable, text, integer, primaryKey, unique } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  primaryKey,
+  unique,
+  check,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 
@@ -10,11 +17,16 @@ export const categories = sqliteTable('categories', {
 });
 
 // ─── Assets ───────────────────────────────────────────────────────────────────
+//
+// Sprint 2 — new column:
+//   ALTER TABLE assets ADD COLUMN category TEXT;
 
 export const assets = sqliteTable('assets', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   name:       text('name').notNull(),
   categoryId: integer('category_id').references(() => categories.id),
+  // ── Sprint 2 ──────────────────────────────────────────────────────────────
+  category:   text('category'),    // denormalised label, e.g. "Forex", "Metals"
 });
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
@@ -46,30 +58,119 @@ export const prompts = sqliteTable('prompts', {
 });
 
 // ─── Posts ────────────────────────────────────────────────────────────────────
-// Migration note for existing DBs — run these ALTER statements:
 //
-//   ALTER TABLE posts ADD COLUMN category        TEXT;
-//   ALTER TABLE posts ADD COLUMN tags            TEXT;
-//   ALTER TABLE posts ADD COLUMN slug            TEXT;
+// Original migration notes — SEO / taxonomy columns (already applied):
+//
+//   ALTER TABLE posts ADD COLUMN category         TEXT;
+//   ALTER TABLE posts ADD COLUMN tags             TEXT;
+//   ALTER TABLE posts ADD COLUMN slug             TEXT;
 //   ALTER TABLE posts ADD COLUMN meta_description TEXT;
-//   ALTER TABLE posts ADD COLUMN meta_keywords   TEXT;
+//   ALTER TABLE posts ADD COLUMN meta_keywords    TEXT;
 //
-// For new installs, run: npx drizzle-kit generate && npx wrangler d1 migrations apply
+// Sprint 2 migration notes (applied via 0002_sprint2_posts_columns.sql):
+//
+//   ALTER TABLE posts ADD COLUMN asset_id     INTEGER REFERENCES assets(id);
+//   ALTER TABLE posts ADD COLUMN direction    TEXT CHECK(direction IN ('Bullish','Bearish','Neutral'));
+//   ALTER TABLE posts ADD COLUMN bias_type    TEXT;
+//   ALTER TABLE posts ADD COLUMN summary      TEXT;
+//   ALTER TABLE posts ADD COLUMN body         TEXT;
+//   ALTER TABLE posts ADD COLUMN is_pro_only  INTEGER NOT NULL DEFAULT 0;
+//   ALTER TABLE posts ADD COLUMN confidence   INTEGER NOT NULL DEFAULT 0;
+//   ALTER TABLE posts ADD COLUMN published_at TEXT;
 
-export const posts = sqliteTable('posts', {
-  id:              integer('id').primaryKey({ autoIncrement: true }),
-  title:           text('title').notNull(),
-  content:         text('content').notNull(),
-  status:          text('status').notNull().default('draft'), // 'draft' | 'published' | 'archived'
-  assetId:         integer('asset_id').references(() => assets.id),
-  createdAt:       integer('created_at').notNull().default(sql`(unixepoch('now') * 1000)`),
-  // ── New SEO & taxonomy columns ─────────────────────────────────────────────
-  category:        text('category'),           // e.g. "Technical Analysis"
-  tags:            text('tags'),               // comma-separated: "forex,gold,xauusd"
-  slug:            text('slug'),               // URL slug: "xauusd-weekly-outlook"
-  metaDescription: text('meta_description'),   // SEO meta description (≤160 chars)
-  metaKeywords:    text('meta_keywords'),      // SEO meta keywords, comma-separated
-});
+export const posts = sqliteTable(
+  'posts',
+  {
+    // ── Core ────────────────────────────────────────────────────────────────
+    id:      integer('id').primaryKey({ autoIncrement: true }),
+    title:   text('title').notNull(),
+    content: text('content').notNull(),                           // original rich-text column (keep)
+    status:  text('status').notNull().default('draft'),           // 'draft' | 'published' | 'archived'
+
+    // ── Existing SEO / taxonomy columns ─────────────────────────────────────
+    assetId:         integer('asset_id').references(() => assets.id),
+    category:        text('category'),           // e.g. "Forex", "Metals"
+    tags:            text('tags'),               // comma-separated or JSON
+    slug:            text('slug'),               // URL slug: "xauusd-weekly-outlook"
+    metaDescription: text('meta_description'),   // ≤160 chars
+    metaKeywords:    text('meta_keywords'),       // comma-separated keywords
+
+    // ── Timestamps ──────────────────────────────────────────────────────────
+    /**
+     * createdAt — epoch-milliseconds (integer) set automatically on INSERT.
+     * Already present in the original schema; kept here unchanged.
+     */
+    createdAt:  integer('created_at')
+                  .notNull()
+                  .default(sql`(unixepoch('now') * 1000)`),
+
+    /**
+     * publishedAt — ISO-8601 text string; set by the CMS when `status` is
+     * changed to 'published'.  Null for drafts.
+     * Stored as TEXT so it can be NULL before publish and is human-readable
+     * in the DB browser without epoch→date conversion.
+     */
+    publishedAt: text('published_at'),
+
+    // ── Sprint 2 — Content pipeline columns ─────────────────────────────────
+
+    /**
+     * direction — AI-determined market bias for this asset.
+     * Enforced at the DB level by a CHECK constraint (see table options below)
+     * and at the application level by the Direction type in src/types/content.ts.
+     */
+    direction: text('direction'),               // 'Bullish' | 'Bearish' | 'Neutral'
+
+    /**
+     * biasType — human-readable label for the analysis type shown on cards.
+     * e.g. "Fundamental Bias", "ICT Bias — Today", "ICT Bias — Yesterday"
+     */
+    biasType: text('bias_type'),
+
+    /**
+     * summary — 1–2 sentence plain-text summary displayed on feed cards and
+     * in the detail page header.  Distinct from metaDescription (SEO) and
+     * body (full article).
+     */
+    summary: text('summary'),
+
+    /**
+     * body — Full TipTap HTML for the detail page.
+     * Kept separate from `content` (the original CMS column) so the migration
+     * is additive and no existing data is lost.
+     */
+    body: text('body'),
+
+    /**
+     * isProOnly — freemium gate flag.
+     * 0 = free (visible to all users)
+     * 1 = Pro-only (hidden behind paywall; becomes free after 24 h as
+     *     "historical proof", see deriveIsHistorical() in src/types/content.ts)
+     *
+     * Stored as integer (SQLite has no native boolean).
+     * Default 0 so that newly created posts are free until explicitly gated.
+     */
+    isProOnly: integer('is_pro_only').notNull().default(0),
+
+    /**
+     * confidence — AI-generated confidence score (0–100).
+     * Rendered as the coloured progress bar on feed cards and the detail header.
+     */
+    confidence: integer('confidence').notNull().default(0),
+  },
+  // ── Table-level constraints ─────────────────────────────────────────────────
+  (table) => ({
+    /**
+     * directionCheck — mirrors the CHECK constraint already applied to the
+     * live DB via 0002_sprint2_posts_columns.sql so that Drizzle Kit's schema
+     * introspection stays in sync.
+     */
+    directionCheck: check(
+      'direction_check',
+      sql`${table.direction} in ('Bullish', 'Bearish', 'Neutral')`,
+    ),
+  }),
+);
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
 
@@ -80,16 +181,16 @@ export type DBPost   = typeof posts.$inferSelect;
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ─── AUTH.JS v5 — DrizzleAdapter Tables (SQLite / Cloudflare D1) ──────────────
+// ─── AUTH.JS v5 — DrizzleAdapter Tables (SQLite / Turso) ─────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Migration note for existing DBs — run these statements once:
 //
-//   ALTER TABLE user ADD COLUMN trial_starts_at  INTEGER;
-//   ALTER TABLE user ADD COLUMN trial_ends_at    INTEGER;
-//   ALTER TABLE user ADD COLUMN device_id        TEXT;
+//   ALTER TABLE user ADD COLUMN trial_starts_at    INTEGER;
+//   ALTER TABLE user ADD COLUMN trial_ends_at      INTEGER;
+//   ALTER TABLE user ADD COLUMN device_id          TEXT;
 //   ALTER TABLE user ADD COLUMN stripe_customer_id TEXT;
-//   ALTER TABLE user ADD COLUMN is_pro           INTEGER NOT NULL DEFAULT 0;
+//   ALTER TABLE user ADD COLUMN is_pro             INTEGER NOT NULL DEFAULT 0;
 //
 //   CREATE TABLE IF NOT EXISTS session (
 //     sessionToken TEXT NOT NULL PRIMARY KEY,
@@ -104,7 +205,6 @@ export type DBPost   = typeof posts.$inferSelect;
 //     PRIMARY KEY (identifier, token)
 //   );
 //
-// For new installs, run: npx drizzle-kit generate && npx wrangler d1 migrations apply
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -245,9 +345,11 @@ export const savedPosts = sqliteTable(
     userId:  text("user_id")
                .notNull()
                .references(() => users.id, { onDelete: "cascade" }),
-    postId:  text("post_id")
-               .notNull()
-               .references(() => posts.id, { onDelete: "cascade" }),
+    // ⚠️  Bug #11 — post_id is stored as TEXT but posts.id is INTEGER.
+    //     The column type will be fixed (text → integer) in Sprint 3 so the
+    //     FK relationship is correct at the DB level.  Until then,
+    //     get-content.ts works around this with an explicit CAST.
+    postId:  text("post_id").notNull(),
     savedAt: text("saved_at").default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => ({

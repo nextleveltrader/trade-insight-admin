@@ -2,20 +2,19 @@
 
 // src/app/(user)/feed/FeedPageClient.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// TradeInsight Daily — Market Feed  v9  "Real-Auth Session Wired"
+// TradeInsight Daily — Market Feed  v10  "Sprint 2: Real DB Data"
 //
-// v9 changes vs v8:
-//   [AUTH] Removed hardcoded `HAS_ACTIVE_SUBSCRIPTION = false` constant.
-//          Now receives `hasAccess: boolean` as a prop from the server
-//          component shell (feed/page.tsx), which derives the value from
-//          the real Auth.js JWT session: isPro || (trialEndsAt > now).
+// v10 changes vs v9:
+//   [DATA] Removed the entire `INSIGHTS` mock array.
+//          Now receives `insights: UIInsight[]` as a prop from the server
+//          shell (feed/page.tsx) which calls getLatestInsights().
 //
-//   [SAVE] `initialSavedIds: number[]` is now passed as a prop from the
-//          server shell (which calls getSavedPostIds() before streaming
-//          HTML), eliminating the useEffect waterfall that existed in v8.
-//          The prop seeds the `savedIds` Set directly on mount.
+//   [STAT] Stats bar derives live counts from the real insights array.
 //
-//   [KEEP] All v8 layout, animation, and bookmark behaviour unchanged.
+//   [EMPTY] Proper empty states when no published posts exist in the DB
+//           or no posts match the active category filter.
+//
+//   [KEEP] All v9 layout, animation, filter, and bookmark behaviour unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useMemo, useOptimistic, useTransition } from "react";
@@ -42,92 +41,18 @@ import {
   Bookmark,
   BookmarkCheck,
 } from "lucide-react";
-import { toggleSaveInsight } from "@/actions/save-insight";
-
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-
-type Direction   = "Bullish" | "Bearish" | "Neutral";
-type Category    = "Forex" | "Crypto" | "Indices" | "Commodities" | "Metals";
-type FilterLabel = "All" | Category;
-
-interface Insight {
-  id:           number;
-  asset:        string;
-  category:     Category;
-  direction:    Direction;
-  biasType:     string;
-  summary:      string;
-  detail:       string;
-  timeAgo:      string;
-  publishedAt:  string;
-  readMin:      number;
-  confidence:   number;
-  isProOnly:    boolean;
-  isHistorical: boolean;
-}
+import { toggleSaveInsight }                from "@/actions/save-insight";
+import { UIInsight, Direction, Category }   from "@/types/content";
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
 interface MarketFeedPageProps {
-  /** True when the user has an active Pro subscription OR an active trial. */
-  hasAccess: boolean;
-  /** Pre-fetched saved post IDs from D1 — seeds bookmark icons without a
-   *  client-side useEffect round-trip. */
+  hasAccess:       boolean;
+  insights:        UIInsight[];
   initialSavedIds: number[];
 }
 
-// ─── MOCK DATA ────────────────────────────────────────────────────────────────
-
-const INSIGHTS: Insight[] = [
-  {
-    id: 1, asset: "EUR/USD", category: "Forex", direction: "Bullish",
-    biasType: "Fundamental Bias",
-    summary: "Softer USD tone following yesterday's weaker ISM Services data underpins the Euro. ECB speak today could amplify the move if rhetoric turns less dovish.",
-    detail: "Macro backdrop supports dip-buying. Watch the 1.0870 demand area for intraday confirmation entries.",
-    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 4, confidence: 74,
-    isProOnly: false, isHistorical: false,
-  },
-  {
-    id: 2, asset: "GOLD", category: "Metals", direction: "Bullish",
-    biasType: "Fundamental Outlook",
-    summary: "Geopolitical risk premium and a pause in real yield gains continue to support Gold. CPI data due Thursday is the next major fundamental catalyst.",
-    detail: "Fundamental bias: long-side. Key support at 2,318 — a close below invalidates the setup.",
-    timeAgo: "3h ago", publishedAt: "06:15 AM UTC", readMin: 5, confidence: 79,
-    isProOnly: false, isHistorical: false,
-  },
-  {
-    id: 3, asset: "GBP/USD", category: "Forex", direction: "Bearish",
-    biasType: "ICT Bias — Today",
-    summary: "Bearish OB at 1.2738–1.2754 sitting directly above price. A retest into this zone with rejection sets up a clean short targeting the 1.2680 BSL pool.",
-    detail: "Daily FVG at 1.2695 acting as a draw on liquidity. SL above 1.2760 for tight risk management.",
-    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 6, confidence: 81,
-    isProOnly: true, isHistorical: false,
-  },
-  {
-    id: 4, asset: "BTC/USD", category: "Crypto", direction: "Bullish",
-    biasType: "ICT Bias — Today",
-    summary: "Weekly FVG between 66,200–67,100 provided a clean mitigation. Expecting displacement higher toward the 70,400 buyside liquidity as the primary draw on price.",
-    detail: "Only long-bias setups in play today. Any sell below 65,800 invalidates the weekly bullish narrative.",
-    timeAgo: "2h ago", publishedAt: "06:15 AM UTC", readMin: 7, confidence: 77,
-    isProOnly: true, isHistorical: false,
-  },
-  {
-    id: 5, asset: "US500", category: "Indices", direction: "Bullish",
-    biasType: "ICT Bias — Yesterday",
-    summary: "Price swept the 5,198 sell-side liquidity in the London session then delivered a full bullish displacement into New York open. Bias played out for +38 pts.",
-    detail: "Confirmation came via the 15-min MSS at 5,210. Entry at the FVG retest, target hit at 5,248.",
-    timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 5, confidence: 88,
-    isProOnly: true, isHistorical: true,
-  },
-  {
-    id: 6, asset: "OIL (WTI)", category: "Commodities", direction: "Bearish",
-    biasType: "ICT Bias — Yesterday",
-    summary: "Bearish OB at 87.40–87.65 was mitigated perfectly in early London. Price delivered a sharp sell-off into the 84.90 void — a textbook ICT delivery.",
-    detail: "The session closed at 85.10, capturing 90% of the projected move. Bias accuracy: confirmed.",
-    timeAgo: "Yesterday", publishedAt: "06:15 AM UTC · Apr 13", readMin: 4, confidence: 91,
-    isProOnly: true, isHistorical: true,
-  },
-];
+type FilterLabel = "All" | Category;
 
 // ─── FILTER TABS ──────────────────────────────────────────────────────────────
 
@@ -144,29 +69,31 @@ const FILTERS: { label: FilterLabel; icon: React.ElementType }[] = [
 
 const DIRECTION_MAP: Record<
   Direction,
-  {
-    Icon: React.ElementType;
-    badgeCls: string; barCls: string;
-    glowCls: string; borderHover: string; headerGlow: string;
-  }
+  { Icon: React.ElementType; badgeCls: string; barCls: string; glowCls: string; borderHover: string; headerGlow: string }
 > = {
   Bullish: {
     Icon: TrendingUp,
-    badgeCls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-    barCls: "bg-emerald-400", glowCls: "sm:hover:shadow-emerald-500/20",
-    borderHover: "sm:hover:border-emerald-500/30", headerGlow: "from-emerald-500/[0.05]",
+    badgeCls:    "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
+    barCls:      "bg-emerald-400",
+    glowCls:     "sm:hover:shadow-emerald-500/20",
+    borderHover: "sm:hover:border-emerald-500/30",
+    headerGlow:  "from-emerald-500/[0.05]",
   },
   Bearish: {
     Icon: TrendingDown,
-    badgeCls: "text-rose-400 bg-rose-500/10 border-rose-500/25",
-    barCls: "bg-rose-400", glowCls: "sm:hover:shadow-rose-500/20",
-    borderHover: "sm:hover:border-rose-500/30", headerGlow: "from-rose-500/[0.05]",
+    badgeCls:    "text-rose-400 bg-rose-500/10 border-rose-500/25",
+    barCls:      "bg-rose-400",
+    glowCls:     "sm:hover:shadow-rose-500/20",
+    borderHover: "sm:hover:border-rose-500/30",
+    headerGlow:  "from-rose-500/[0.05]",
   },
   Neutral: {
     Icon: Minus,
-    badgeCls: "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
-    barCls: "bg-zinc-500", glowCls: "sm:hover:shadow-zinc-500/10",
-    borderHover: "sm:hover:border-zinc-600/40", headerGlow: "from-zinc-700/[0.05]",
+    badgeCls:    "text-zinc-400 bg-zinc-700/30 border-zinc-700/50",
+    barCls:      "bg-zinc-500",
+    glowCls:     "sm:hover:shadow-zinc-500/10",
+    borderHover: "sm:hover:border-zinc-600/40",
+    headerGlow:  "from-zinc-700/[0.05]",
   },
 };
 
@@ -180,24 +107,23 @@ const CATEGORY_STYLE: Record<Category, string> = {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-function formatDate() {
+function formatDate(): string {
   return new Date().toLocaleDateString("en-US", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 }
 
-function isCardLocked(i: Insight, hasAccess: boolean) {
-  return i.isProOnly && !i.isHistorical && !hasAccess;
+function isCardLocked(insight: UIInsight, hasAccess: boolean): boolean {
+  return insight.isProOnly && !insight.isHistorical && !hasAccess;
 }
 
-// ─── MICRO-COMPONENTS ─────────────────────────────────────────────────────────
+// ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
 
 function DirectionBadge({ direction }: { direction: Direction }) {
   const { Icon, badgeCls } = DIRECTION_MAP[direction];
   return (
     <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${badgeCls}`}>
-      <Icon size={10} strokeWidth={2.5} />
-      {direction}
+      <Icon size={10} strokeWidth={2.5} />{direction}
     </span>
   );
 }
@@ -213,8 +139,6 @@ function ConfidenceBar({ value, barCls, blurred }: { value: number; barCls: stri
   );
 }
 
-// ─── CARD LOCK BANNER ─────────────────────────────────────────────────────────
-
 function CardLockBanner() {
   return (
     <div className="relative z-10 mb-3 flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl border border-amber-500/20 bg-zinc-900/70 backdrop-blur-md px-3 py-2">
@@ -225,17 +149,11 @@ function CardLockBanner() {
         </div>
         <div>
           <p className="text-[10.5px] font-bold leading-none text-white">Pro Insight</p>
-          <p className="mt-0.5 text-[9.5px] font-light leading-tight text-zinc-500">
-            Upgrade to unlock today's ICT bias
-          </p>
+          <p className="mt-0.5 text-[9.5px] font-light leading-tight text-zinc-500">Upgrade to unlock today's ICT bias</p>
         </div>
       </div>
-      <Link
-        href="/pricing"
-        className="relative flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9.5px] font-bold text-amber-400 transition-all hover:bg-amber-500/20"
-      >
-        <Sparkles size={7} />
-        Unlock
+      <Link href="/pricing" className="relative flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9.5px] font-bold text-amber-400 transition-all hover:bg-amber-500/20">
+        <Sparkles size={7} />Unlock
       </Link>
     </div>
   );
@@ -244,13 +162,12 @@ function CardLockBanner() {
 function PastProBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-400">
-      <History size={8} strokeWidth={2.5} />
-      Past Pro
+      <History size={8} strokeWidth={2.5} />Past Pro
     </span>
   );
 }
 
-// ─── CARD BOOKMARK BUTTON ─────────────────────────────────────────────────────
+// ─── BOOKMARK BUTTON ──────────────────────────────────────────────────────────
 
 function CardBookmarkButton({ insightId, initialIsSaved }: { insightId: number; initialIsSaved: boolean }) {
   const [optimisticSaved, setOptimisticSaved] = useOptimistic(
@@ -274,8 +191,7 @@ function CardBookmarkButton({ insightId, initialIsSaved }: { insightId: number; 
       disabled={isPending}
       title={optimisticSaved ? "Remove bookmark" : "Save insight"}
       className={`
-        flex h-6 w-6 shrink-0 items-center justify-center rounded-lg
-        border transition-all duration-150
+        flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border transition-all duration-150
         ${isPending ? "opacity-50" : ""}
         ${optimisticSaved
           ? "border-amber-500/25 bg-amber-500/10 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.18)]"
@@ -283,10 +199,7 @@ function CardBookmarkButton({ insightId, initialIsSaved }: { insightId: number; 
         }
       `}
     >
-      {optimisticSaved
-        ? <BookmarkCheck size={11} strokeWidth={2.2} />
-        : <Bookmark      size={11} strokeWidth={1.75} />
-      }
+      {optimisticSaved ? <BookmarkCheck size={11} strokeWidth={2.2} /> : <Bookmark size={11} strokeWidth={1.75} />}
     </button>
   );
 }
@@ -298,89 +211,56 @@ function InsightCard({
   hasAccess,
   initialIsSaved,
 }: {
-  insight:        Insight;
-  hasAccess:      boolean;
-  initialIsSaved: boolean;
+  insight: UIInsight; hasAccess: boolean; initialIsSaved: boolean;
 }) {
-  const dir    = DIRECTION_MAP[insight.direction];
-  const catCls = CATEGORY_STYLE[insight.category];
-  const locked = isCardLocked(insight, hasAccess);
+  const dir        = DIRECTION_MAP[insight.direction];
+  const catCls     = CATEGORY_STYLE[insight.category];
+  const locked     = isCardLocked(insight, hasAccess);
+  const detailHref = insight.slug ? `/insights/${insight.slug}` : `/insights/${insight.id}`;
 
   return (
-    <article
-      className={`
-        group flex flex-col
-        sm:overflow-hidden sm:rounded-2xl
-        sm:border sm:border-zinc-800/70 sm:bg-zinc-900/40
-        sm:transition-all sm:duration-200
-        sm:hover:-translate-y-0.5 sm:hover:border-zinc-700/60
-        sm:hover:bg-zinc-900/70 sm:hover:shadow-xl
-        ${dir.glowCls} ${dir.borderHover}
-      `}
-    >
-      {/* ── MOBILE LIST ITEM ── */}
+    <article className={`group flex flex-col sm:overflow-hidden sm:rounded-2xl sm:border sm:border-zinc-800/70 sm:bg-zinc-900/40 sm:transition-all sm:duration-200 sm:hover:-translate-y-0.5 sm:hover:border-zinc-700/60 sm:hover:bg-zinc-900/70 sm:hover:shadow-xl ${dir.glowCls} ${dir.borderHover}`}>
+
+      {/* MOBILE */}
       <div className="flex flex-col px-4 py-4 sm:hidden bg-zinc-900/30 border-t border-zinc-800/40 border-b-[6px] border-b-zinc-950">
         <div className="flex items-center gap-1.5">
           <h3 className="shrink-0 text-[13.5px] font-bold tracking-tight text-white">{insight.asset}</h3>
-          <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide ${catCls}`}>
-            {insight.category}
-          </span>
+          <span className={`shrink-0 rounded border px-1 py-px text-[8px] font-bold uppercase tracking-wide ${catCls}`}>{insight.category}</span>
           {insight.isHistorical && <span className="shrink-0"><PastProBadge /></span>}
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <DirectionBadge direction={insight.direction} />
             <CardBookmarkButton insightId={insight.id} initialIsSaved={initialIsSaved} />
           </div>
         </div>
-
         <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600">{insight.biasType}</p>
-
         {locked && <div className="mt-2.5"><CardLockBanner /></div>}
-
-        <p className={`mt-2 text-[11.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
-          {insight.summary}
-        </p>
-
+        <p className={`mt-2 text-[11.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>{insight.summary}</p>
         {insight.isHistorical && (
           <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2 py-1.5">
             <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
-            <p className="text-[9.5px] font-light leading-relaxed text-zinc-500">
-              Published <span className="font-medium text-zinc-400">{insight.publishedAt}</span>{" "}· Now free.
-            </p>
+            <p className="text-[9.5px] font-light leading-relaxed text-zinc-500">Published <span className="font-medium text-zinc-400">{insight.publishedAt}</span> · Now free.</p>
           </div>
         )}
-
         <div className="mt-2.5">
           <p className="mb-1 text-[8px] font-semibold uppercase tracking-widest text-zinc-700">Confidence</p>
           <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
         </div>
-
         <div className="mt-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[9.5px] text-zinc-700">
-            <span className="flex items-center gap-1"><Clock size={8} />{insight.timeAgo}</span>
-            <span>·</span>
-            <span className="flex items-center gap-1"><BookOpen size={8} />{insight.readMin} min</span>
-          </div>
-          {locked ? (
-            <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
-              <Lock size={8} />Upgrade
-            </Link>
-          ) : (
-            <Link href={`/insights/${insight.id}`} className="flex items-center gap-1 text-[10px] font-semibold text-sky-400">
-              Read<ArrowRight size={9} />
-            </Link>
-          )}
+          <span className="flex items-center gap-1 text-[9.5px] text-zinc-700"><Clock size={8} />{insight.timeAgo}</span>
+          {locked
+            ? <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 hover:text-amber-400"><Lock size={8} />Upgrade</Link>
+            : <Link href={detailHref} className="flex items-center gap-1 text-[10px] font-semibold text-sky-400">Read<ArrowRight size={9} /></Link>
+          }
         </div>
       </div>
 
-      {/* ── DESKTOP CARD ── */}
+      {/* DESKTOP */}
       <div className="hidden sm:flex sm:flex-1 sm:flex-col">
         <div className={`flex items-start justify-between gap-2 border-b border-zinc-800/60 bg-gradient-to-r ${dir.headerGlow} to-transparent px-4 py-3.5`}>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
               <h3 className="text-sm font-bold tracking-tight text-white">{insight.asset}</h3>
-              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>
-                {insight.category}
-              </span>
+              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${catCls}`}>{insight.category}</span>
               {insight.isHistorical && <PastProBadge />}
             </div>
             <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">{insight.biasType}</p>
@@ -390,50 +270,33 @@ function InsightCard({
             <DirectionBadge direction={insight.direction} />
           </div>
         </div>
-
         <div className="flex flex-1 flex-col px-4 py-4">
           {locked && <CardLockBanner />}
-          <p className={`flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
-            {insight.summary}
-          </p>
-          <p className={`mt-2 text-[11px] font-light leading-relaxed text-zinc-600 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>
-            {insight.detail}
-          </p>
-
+          <p className={`flex-1 text-[12.5px] font-light leading-relaxed text-zinc-400 ${locked ? "blur-sm select-none" : ""} transition-all duration-200`}>{insight.summary}</p>
           {insight.isHistorical && (
             <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-1.5">
               <CheckCircle size={9} className="mt-px shrink-0 text-violet-400" strokeWidth={2} />
-              <p className="text-[10px] font-light leading-relaxed text-zinc-500">
-                Published on <span className="font-medium text-zinc-400">{insight.publishedAt}</span>{" "}· Now free as historical proof.
-              </p>
+              <p className="text-[10px] font-light leading-relaxed text-zinc-500">Published on <span className="font-medium text-zinc-400">{insight.publishedAt}</span> · Now free as historical proof.</p>
             </div>
           )}
-
           <div className="mt-4">
             <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-700">Bias Confidence</p>
             <ConfidenceBar value={insight.confidence} barCls={dir.barCls} blurred={locked} />
           </div>
         </div>
-
         <div className="flex items-center justify-between border-t border-zinc-800/60 px-4 py-3">
           <div className="flex items-center gap-3 text-[10px] text-zinc-700">
             <span className="flex items-center gap-1"><Clock size={8} />{insight.timeAgo}</span>
-            <span>·</span>
-            <span className="flex items-center gap-1"><BookOpen size={8} />{insight.readMin} min</span>
+            {insight.readMin > 0 && <><span>·</span><span className="flex items-center gap-1"><BookOpen size={8} />{insight.readMin} min</span></>}
           </div>
-          {locked ? (
-            <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 transition-colors hover:text-amber-400">
-              <Lock size={8} />Upgrade
-            </Link>
-          ) : (
-            <Link
-              href={`/insights/${insight.id}`}
-              className="flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5 text-[10px] font-semibold text-sky-400 transition-all duration-150 group-hover:border-sky-500/30 group-hover:bg-sky-500/10"
-            >
-              Read
-              <ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
-            </Link>
-          )}
+          {locked
+            ? <Link href="/pricing" className="flex items-center gap-1 text-[10px] font-semibold text-amber-400/80 hover:text-amber-400"><Lock size={8} />Upgrade</Link>
+            : (
+              <Link href={detailHref} className="flex items-center gap-1 rounded-lg border border-sky-500/0 px-2 py-0.5 text-[10px] font-semibold text-sky-400 transition-all duration-150 group-hover:border-sky-500/30 group-hover:bg-sky-500/10">
+                Read<ArrowRight size={9} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+              </Link>
+            )
+          }
         </div>
       </div>
     </article>
@@ -442,23 +305,25 @@ function InsightCard({
 
 // ─── STATS BAR ────────────────────────────────────────────────────────────────
 
-const STATS = [
-  { label: "Assets Covered", value: "20",      icon: BarChart2,   iconCls: "text-sky-400",    bgCls: "bg-sky-500/10"     },
-  { label: "Insights Today",  value: "6",       icon: CheckCircle, iconCls: "text-emerald-400", bgCls: "bg-emerald-500/10" },
-  { label: "Session Bias",    value: "Bullish", icon: TrendingUp,  iconCls: "text-emerald-400", bgCls: "bg-emerald-500/10" },
-];
+function StatsBar({ insights, hasAccess }: { insights: UIInsight[]; hasAccess: boolean }) {
+  const bullish  = insights.filter((i) => i.direction === "Bullish").length;
+  const bearish  = insights.filter((i) => i.direction === "Bearish").length;
+  const bias     = insights.length === 0 ? "—" : bullish >= bearish ? "Bullish" : "Bearish";
+  const BiasIcon = bias === "Bullish" ? TrendingUp : bias === "Bearish" ? TrendingDown : Minus;
 
-function StatsBar() {
+  const stats = [
+    { label: "Insights Today", value: String(insights.length), icon: BarChart2, iconCls: "text-sky-400",    bgCls: "bg-sky-500/10"     },
+    { label: "Session Bias",   value: bias,                    icon: BiasIcon,  iconCls: bias === "Bullish" ? "text-emerald-400" : bias === "Bearish" ? "text-rose-400" : "text-zinc-400", bgCls: bias === "Bullish" ? "bg-emerald-500/10" : bias === "Bearish" ? "bg-rose-500/10" : "bg-zinc-800/40" },
+    { label: "Access Level",   value: hasAccess ? "Pro / Trial" : "Free Tier", icon: hasAccess ? ShieldCheck : Lock, iconCls: hasAccess ? "text-emerald-400" : "text-amber-400", bgCls: hasAccess ? "bg-emerald-500/10" : "bg-amber-500/10" },
+  ] as const;
+
   return (
     <div className="mb-6 w-full overflow-x-auto snap-x snap-mandatory scrollbar-none [&::-webkit-scrollbar]:hidden">
       <div className="flex gap-3 pb-1 sm:pb-0">
-        {STATS.map((s) => {
+        {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <div
-              key={s.label}
-              className="flex shrink-0 snap-start items-center gap-2.5 min-w-[120px] sm:min-w-0 sm:flex-1 px-3 py-2 sm:px-4 sm:py-3.5 sm:rounded-xl sm:border sm:border-zinc-800/60 sm:bg-zinc-900/40"
-            >
+            <div key={s.label} className="flex shrink-0 snap-start items-center gap-2.5 min-w-[120px] sm:min-w-0 sm:flex-1 px-3 py-2 sm:px-4 sm:py-3.5 sm:rounded-xl sm:border sm:border-zinc-800/60 sm:bg-zinc-900/40">
               <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg sm:h-8 sm:w-8 ${s.bgCls}`}>
                 <Icon size={13} className={s.iconCls} strokeWidth={1.8} />
               </div>
@@ -486,16 +351,7 @@ function CategoryFilter({ activeFilter, onSelect }: { activeFilter: FilterLabel;
             <button
               key={label}
               onClick={() => onSelect(label)}
-              className={`
-                flex shrink-0 snap-start items-center gap-1 sm:gap-1.5
-                rounded-full border px-3 py-1 sm:px-3.5 sm:py-1.5
-                text-[10.5px] sm:text-[11px] font-semibold
-                transition-all duration-150
-                ${isActive
-                  ? "border-sky-500/40 bg-sky-500/15 text-sky-400 shadow-[0_0_12px_rgba(14,165,233,0.14)]"
-                  : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
-                }
-              `}
+              className={`flex shrink-0 snap-start items-center gap-1 sm:gap-1.5 rounded-full border px-3 py-1 sm:px-3.5 sm:py-1.5 text-[10.5px] sm:text-[11px] font-semibold transition-all duration-150 ${isActive ? "border-sky-500/40 bg-sky-500/15 text-sky-400 shadow-[0_0_12px_rgba(14,165,233,0.14)]" : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"}`}
             >
               <Icon size={10} strokeWidth={isActive ? 2.2 : 1.75} className={isActive ? "text-sky-400" : "text-zinc-700"} />
               {label}
@@ -507,49 +363,43 @@ function CategoryFilter({ activeFilter, onSelect }: { activeFilter: FilterLabel;
   );
 }
 
-// ─── CONTENT KEY ──────────────────────────────────────────────────────────────
-
 function ContentKey({ hasAccess }: { hasAccess: boolean }) {
   if (hasAccess) return null;
   return (
     <div className="mb-4 w-full overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden">
       <div className="flex min-w-max items-center gap-1 rounded-xl border border-zinc-800/60 bg-zinc-900/30 px-3 py-2">
         <span className="mr-1.5 text-[8.5px] font-bold uppercase tracking-wider text-zinc-700">Key:</span>
-        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-zinc-800/60 bg-zinc-900/60 px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-400" />Fundamental — Free
-        </span>
-        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <Lock size={8} className="shrink-0 text-amber-400" />Today's ICT — Pro
-        </span>
-        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-500/20 bg-violet-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500">
-          <History size={8} className="shrink-0 text-violet-400" />Past Pro — Free after 24h
-        </span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-zinc-800/60 bg-zinc-900/60 px-2 py-0.5 text-[8.5px] text-zinc-500"><span className="h-1 w-1 shrink-0 rounded-full bg-emerald-400" />Fundamental — Free</span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500"><Lock size={8} className="shrink-0 text-amber-400" />Today's ICT — Pro</span>
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-500/20 bg-violet-500/[0.06] px-2 py-0.5 text-[8.5px] text-zinc-500"><History size={8} className="shrink-0 text-violet-400" />Past Pro — Free after 24h</span>
       </div>
     </div>
   );
 }
 
-// ─── PAGE ─────────────────────────────────────────────────────────────────────
+// ─── PAGE ROOT ────────────────────────────────────────────────────────────────
 
-export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFeedPageProps) {
+export default function MarketFeedPage({ hasAccess, insights, initialSavedIds }: MarketFeedPageProps) {
   const [activeFilter, setActiveFilter] = useState<FilterLabel>("All");
-
-  // Seed bookmark state from the server-fetched array — no useEffect needed.
   const savedIds = useMemo(() => new Set(initialSavedIds), [initialSavedIds]);
 
-  const filtered =
-    activeFilter === "All"
-      ? INSIGHTS
-      : INSIGHTS.filter((i) => i.category === activeFilter);
+  const filtered = useMemo(
+    () => activeFilter === "All" ? insights : insights.filter((i) => i.category === activeFilter),
+    [insights, activeFilter],
+  );
 
-  const lockedCount = INSIGHTS.filter((i) => isCardLocked(i, hasAccess)).length;
+  const lockedCount = useMemo(
+    () => insights.filter((i) => isCardLocked(i, hasAccess)).length,
+    [insights, hasAccess],
+  );
 
   return (
     <div className="relative w-full overflow-x-hidden">
       <div className="pointer-events-none fixed left-1/2 top-[30%] h-[500px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/[0.04] blur-[120px] md:left-[calc(50%+110px)]" />
 
       <div className="relative">
-        {/* ── HEADER ── */}
+
+        {/* HEADER */}
         <header className="mb-4 sm:mb-6">
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">{formatDate()}</p>
@@ -559,9 +409,9 @@ export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFee
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 </span>
-                Live · {INSIGHTS.length}
+                Live · {insights.length}
               </div>
-              <button className="hidden h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400 sm:flex" title="Refresh feed">
+              <button className="hidden h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400 sm:flex" title="Refresh feed" onClick={() => window.location.reload()}>
                 <RefreshCw size={13} strokeWidth={1.75} />
               </button>
             </div>
@@ -574,15 +424,21 @@ export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFee
           </p>
         </header>
 
-        <StatsBar />
+        <StatsBar insights={insights} hasAccess={hasAccess} />
         <CategoryFilter activeFilter={activeFilter} onSelect={setActiveFilter} />
         <ContentKey hasAccess={hasAccess} />
 
-        {/* ── FEED ── */}
-        {filtered.length === 0 ? (
+        {/* FEED */}
+        {insights.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-20 text-center">
+            <BarChart2 size={28} className="mb-3 text-zinc-700" strokeWidth={1.5} />
+            <p className="text-[13.5px] font-semibold text-zinc-500">No insights published yet</p>
+            <p className="mt-1 text-[11px] text-zinc-700">The first analysis will appear here once the admin publishes it.</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 py-16 text-center">
             <BarChart2 size={26} className="mb-2.5 text-zinc-700" strokeWidth={1.5} />
-            <p className="text-sm font-medium text-zinc-500">No insights for this category today.</p>
+            <p className="text-sm font-medium text-zinc-500">No {activeFilter} insights today.</p>
             <p className="mt-0.5 text-xs text-zinc-700">Try a different filter or check back tomorrow.</p>
           </div>
         ) : (
@@ -598,7 +454,7 @@ export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFee
           </div>
         )}
 
-        {/* ── BOTTOM UPGRADE NUDGE ── */}
+        {/* UPGRADE NUDGE */}
         {!hasAccess && lockedCount > 0 && (
           <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-500/[0.05] via-transparent to-transparent px-4 py-4 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
             <div className="flex items-start gap-3 sm:items-center">
@@ -608,25 +464,18 @@ export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFee
               <div>
                 <p className="text-[12.5px] font-semibold text-white sm:text-[13px]">Today's ICT setups are locked.</p>
                 <p className="text-[10.5px] font-light text-zinc-600 sm:text-[11px]">
-                  Upgrade to access{" "}
-                  <span className="font-medium text-zinc-400">{lockedCount} live daily ICT biases</span>
-                  {" "}before market open.
+                  Upgrade to access <span className="font-medium text-zinc-400">{lockedCount} live daily ICT biases</span> before market open.
                 </p>
               </div>
             </div>
-            <Link
-              href="/pricing"
-              className="group flex w-full items-center justify-center gap-2 sm:w-auto sm:shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-[12px] font-semibold text-amber-400 transition-all duration-150 hover:bg-amber-500/20 hover:border-amber-500/50 hover:shadow-[0_0_18px_rgba(245,158,11,0.18)]"
-            >
-              <Sparkles size={11} />
-              Upgrade to Pro
-              <ArrowRight size={11} className="transition-transform duration-150 group-hover:translate-x-0.5" />
+            <Link href="/pricing" className="group flex w-full items-center justify-center gap-2 sm:w-auto sm:shrink-0 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-[12px] font-semibold text-amber-400 transition-all duration-150 hover:bg-amber-500/20 hover:border-amber-500/50 hover:shadow-[0_0_18px_rgba(245,158,11,0.18)]">
+              <Sparkles size={11} />Upgrade to Pro<ArrowRight size={11} className="transition-transform duration-150 group-hover:translate-x-0.5" />
             </Link>
           </div>
         )}
 
-        {/* ── SUBSCRIBED STRIP ── */}
-        {hasAccess && (
+        {/* SUBSCRIBED STRIP */}
+        {hasAccess && insights.length > 0 && (
           <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-transparent to-transparent px-4 py-4 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 sm:h-9 sm:w-9">
@@ -634,16 +483,13 @@ export default function MarketFeedPage({ hasAccess, initialSavedIds }: MarketFee
               </div>
               <div>
                 <p className="text-[12.5px] font-semibold text-white">You have full access</p>
-                <p className="text-[10.5px] font-light text-zinc-600">
-                  All {INSIGHTS.length} insights unlocked. Publishes daily at 06:15 UTC.
-                </p>
+                <p className="text-[10.5px] font-light text-zinc-600">All {insights.length} insights unlocked. Publishes daily at 06:15 UTC.</p>
               </div>
             </div>
-            <Link href="/settings/subscription" className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400">
-              Manage →
-            </Link>
+            <Link href="/settings/subscription" className="shrink-0 text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-400">Manage →</Link>
           </div>
         )}
+
       </div>
     </div>
   );
