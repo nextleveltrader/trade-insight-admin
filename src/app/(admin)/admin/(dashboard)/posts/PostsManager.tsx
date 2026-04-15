@@ -293,7 +293,7 @@ function CreatePostOverlay({
     return true;
   }
 
-  function handleSubmit(status: PostStatus) {
+function handleSubmit(status: PostStatus) {
     if (!validate()) return;
     onSave(
       {
@@ -306,6 +306,15 @@ function CreatePostOverlay({
         slug:            form.slug.trim()            || null,
         metaDescription: form.metaDescription.trim() || null,
         metaKeywords:    form.metaKeywords.trim()    || null,
+        
+        // ─── Type Error ফিক্স করার জন্য নতুন ফিল্ডগুলো ───
+        direction:       null,
+        biasType:        null,
+        summary:         null,
+        body:            form.content.trim(), 
+        isProOnly:       0,
+        confidence:      0,
+        publishedAt:     null,
       },
       status,
     );
