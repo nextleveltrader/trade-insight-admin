@@ -986,7 +986,7 @@ export default function AssetsManager({ initialData }: { initialData: InitialDat
 
   function handleAddAsset(name: string) {
     if (!selectedCategoryId) return;
-    const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId };
+    const tempAsset: Asset = { id: -Date.now(), name, categoryId: selectedCategoryId, category: null };
     setAssets((prev) => [...prev, tempAsset]);
     startTransition(async () => {
       const result = await addAsset(name, selectedCategoryId);
